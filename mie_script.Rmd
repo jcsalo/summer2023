@@ -1,0 +1,369 @@
+---
+bibliography: zotero.bib
+output:
+  pdf_document: default
+  html_document: default
+  always_allow_html: true
+geometry: margin=0.6in
+
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,message=FALSE,comment='',warning=FALSE)
+knitr::opts_chunk$set(dev = 'pdf')
+
+options(xtable.comment = FALSE)
+options(scipen = 999)
+
+#library(readxl)
+#library(lubridate)
+#library(stringr)
+library(tidyverse)
+#library(tibble)
+library(pander)
+library(knitr)
+#library(janitor)
+#library(tibble)
+#library(cleaner)
+#library(kableExtra)
+#library(writexl)
+#library(whereami)
+#library(odbc)
+#library(bit64)
+#library(survival)
+#library(prodlim)
+#library(reporttools)
+#library(gmodels)
+#library(crosstable)
+#library(broom)
+#library(tidyselect)
+#library(MASS) # use for StepAIC
+
+source('func_analysis.R')# 
+
+```
+
+---
+title: Body Composition and Esophagectomy Outcomes
+subtitle: '`r basename(thisfile())`' 
+
+
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+---
+<style type="text/css">
+.main-container {
+  max-width: 1200px!important;
+  margin-left: auto;
+  margin-right: auto;
+}
+</style>
+
+# Introduction
+
+Despite advanced in minimally-invasive and anesthetic techniques, esophagectomy remains a substantial operation associated with both perioperative morbidity and mortality.
+
+Sarcopenia, or loss of muscle mass, can occur in patients with weight loss due to gastrointestinal obstruction.  Loss of muscle mass is associated with poor survival for gastrointestinal cancer patients [@su82] [@wang25]
+
+Myosteatosis, or fatty infiltration of muscle tissue, occurs with advanced age and inactivity. Myosteatosis appears to be associated with adverse outcomes in cancer patients
+
+## Muscle mass measurement by CT
+
+Muscle mass and myosteasosis can be measured from CT scans obtained for routine medical care [@amini1671].  The abdominal wall muscle area at L3 is associated with skeletal muscle muscle mass [@mitsiopoulos115]
+
+Sarcopenia has been shown to be associated with postoperative complications after GI cancer surgery [@simonsen58]
+
+
+## NSQIP mFrailty Index
+
+[@subramaniam17]
+
+
+
+\clearpage
+
+# Collection cohort Minimally-invasive esophagectomy
+
+- Surgery Date after 1/1/2010 and before 7/1/2022
+- Mid-esophagus, distal esophagus or  GE junction (C15.4, C15.5, C16.0)
+- Minimally-invasive esophagectomy at CMC by a single surgical team
+
+Excluded:
+
+- Preoperative CT scans available
+
+# Outcomes and complications
+
++ Anastomotic Leak (*Aleak*)
++ Pneumonia (*Pneumonia*)
++ Prolonged Ventilation (*Vent*)
++ Pulmonary Complications (aggregate) (*pulmcx*)
++ Discharge Home (*DCHome*) 
++ log(LengthofStay) = (*loglos*) (due to skewed nature of data) (Gaussian distribution)
++ Readmission within 30 days (*Readm30*)
++ Mortality at 90 days (*Mort_90DH*)
++ Mortality at 90 days (*Mort_360DH*)
+
+
+## Independent variable of Interest: 
+
+### Muscle mass and Density (myosteatosis)
++ smi_preop (skeletal muscle index = cross-sectional muscle area (-29 to 150HU)/(height in m^2)) = **SMI**
++ smd_preop (mean Hounsefield units of abdominal wall musculature = muscle density) = **SMD**
++ smg_preop skeletal muscle gauge = skeletal muscle index * abdominal wall muscle density
++ sarco (binary *sarco*) (skeletal muscle index threshold from Prado et al)
++ smg2preop quartiles 1 vs 2 vs 3+4 of Skeletal Muscle Gauge
++ sarco_dx: sarcopenia at diagnosis (definition of [@prado629])
++ scaco_preop: sarcopenia at time of surgery (definition of [@prado629])
+
+### Independent variables (co-variates): 
+
++ age, sex, Race,Histo, BMI,ChemoRT
++ NSQIP mFrailty5 (co-morbidity index)
++ AJCC Clinical T classification: *mcT_* (1 | 2 | 3)
++ AJCC Clinical N Classification: *cN_* (1 | 2 | 3)
++ AJCC Pathologic T Classficiation: *mpT_* ( 0 | 1 | 2 | 3) - Mortality at 1year only
++ Ajcc Pathologic N Classification: *mpN_* ( 0 | 1 | 2 | 3) - Mortality at 1year only
++ Prior neoadjuvant therapy (*ChemoRT*)
+
+
+# Colinear Variables
+
+Measures of body composition (SMI=*smi_preop*, SMD=*density_preop*) are all highly correlated.  Skeletal Muscle Gauge (SMG) is the product of SMI and SMD.
+
+Patients who present with clinical T3 tumors were generally treated with preop chemoradiation 
+
+Body composition measures decline with age and are higher in men than women.
+
+# Variables of Interest 
+
+Preoperative skeletal muscle index (SMI) (*smi_preop*), Preoperative Muscle Density (SMD) (*density_preop*), Skeletal Muscle Gauge (*SMG*) are all continuous. For clinical utility, these have been categorized: 
+
+Q1= Quartile 1 (lowest)
+Q234= Quartile 2 + Quartile 3 + Quartile 4
+
+
+This allows the identification of a small (25%) cohort of high-risk patients.  This very closely mirrors the categorization of grip strength by the FNIH criteria (Low vs Intermediate vs Normal)
+
+The advantage of this approach is that it tailors the analysis technique to the clinical decision-making, so that high-risk patients are identified for whom alternate (non-operative) treatments or interventions (pre-habilitation) may be appropriate.  
+
+This approach also allows that the important biologic impact of these variables on outcomes does not occur throughout the range of the variables of interest, but occurs on the low (bottom quartile) end of the range.
+
+It will be important that categorical variables be analyzed as ordered rather than categorical variables.
+
+# Methods
+
+Abdominal CT scans obtained for routine care were used to identify the slice corresponding to the transverse process of Lumbar 3 (L3) vertebra.  Images were analysed in NIH ImageJ [@gomez-perez419] and the countour of the abdominal wall muscle traced. Skeletal muscle was measured using thresholds of -29 to + 150 HU. Sarcopenia was defined using the criteria of Prado et al [@prado629]
+
+
+# Cohort
+
+
+
+```{r, echo=F}
+
+mie_cohort_path <- 'data_export/mie_cohort.csv'
+mie_collection<-read_csv(mie_cohort_path)%>%
+  rename(Race = race)%>%
+  #mutate(CCI=as.numeric(CCI))%>%
+  as.data.frame()%>%
+  droplevels.data.frame()%>%
+  as.tibble()
+
+mie<-mie_collection%>%
+  filter(!is.na(smd_dx))
+
+paste('Collection cohort consists of',nrow(mie_collection),'eligible patients\n')%>%cat()
+
+paste('Analytic cohort consists of',nrow(mie),' patients with available CT scans suitable for reading')%>%cat()
+
+```
+
+## Demographics
+
+```{r}
+
+table(mie$sex, mie$Race, exclude=NULL, dnn=c("Sex","Race"))
+
+table(mie$sex, mie$ethnicity, exclude=NULL, dnn=c("Sex","Ethnicity"))
+
+paste('\nMedian Age: ',median(mie$age_dx, na.rm=T),'\n')%>%cat()
+
+paste('\nMinimum Age: ',min(mie$age_dx, na.rm=T),'\n')%>%cat()
+
+paste('\nMaximum Age: ',max(mie$age_dx, na.rm=T),'\n')%>%cat()
+
+
+```
+## Tumor Characteristics
+
+```{r}
+
+## Table of Histology *Histo*
+
+table(mie$Histo3, mie$Race, exclude=NULL, dnn=c("Histology","Race"))
+
+fisher.test(table(mie$Histo3, mie$Race, exclude=NULL, dnn=c("Histology","Race")))
+
+## Tables of Clinical T, N, M stages  (ncT,cN,cM)
+
+```
+## Insurance
+
+
+```{r}
+
+table(mie$insurance, mie$Race, exclude=NULL, dnn=c("Insurance","Race"))
+
+fisher.test(table(mie$insurance, mie$Race, exclude=NULL, dnn=c("Insurance","Race")))
+
+```
+## Social Deprivation Index
+
+
+```{r}
+
+paste('\nMedian SDI: ',median(mie$SDI, na.rm=T),'\n')%>%cat()
+
+paste('\nMinimum SDI: ',min(mie$SDI, na.rm=T),'\n')%>%cat()
+
+paste('\nMaximum SDI: ',max(mie$SDI, na.rm=T),'\n')%>%cat()
+
+paste('\nInterquartile Range: ',IQR(mie$SDI, na.rm=T),'\n')%>%cat()
+
+
+
+boxplot(SDI ~ Race, data=mie)
+kruskal.test(SDI ~ Race, data=mie)
+
+## What is the relationship between SDI and insurance status?
+
+
+
+```
+
+## Mortality at 90 Days
+
+
+```{r}
+boxplot(mie$age_dx ~ mie$Mort_90DH)
+
+kruskal.test(mie$age_dx ~ mie$Mort_90DH)
+
+```
+## Mortality at 1 year
+
+
+```{r}
+
+## What is the relationship between age and mortality at one year (Mort_360DH)
+
+
+```
+
+
+
+```{r}
+boxplot(mie$vati_preop ~ mie$Race)
+
+kruskal.test(mie$vati_preop ~ mie$Race)
+
+
+boxplot(mie$vati_preop ~ mie$Histo3)
+
+kruskal.test(mie$vati_preop ~ mie$Histo3)
+
+
+boxplot(mie$imati_preop ~ mie$Mort_360DH)
+
+kruskal.test(mie$imati_preop ~ mie$Mort_360DH)
+
+
+boxplot(mie$vati_preop ~ mie$wt_loss_class4)
+
+kruskal.test(mie$vati_preop ~ mie$wt_loss_class4)
+
+boxplot(mie$sati_preop ~ mie$wt_loss_class4)
+
+kruskal.test(mie$sati_preop ~ mie$wt_loss_class4)
+
+
+cor.test(mie$vati_preop,mie$prior_wt_percent)
+
+
+cor.test(mie$sati_preop,mie$prior_wt_percent)
+
+
+cor.test(mie$vati_preop,mie$BMI)
+
+
+cor.test(mie$sati_preop,mie$BMI)
+```
+
+```{r}
+
+table(mie$ChemoRT, mie$Histo3, exclude=NULL, dnn=c("ChemoRT","Histology"))
+
+fisher.test(table(mie$ChemoRT, mie$Histo3, exclude=NULL, dnn=c("Insurance","Race")))
+
+```
+
+```{r}
+plot(mie$sati_preop,mie$BMI)
+
+```
+
+## BMI
+
+
+```{r}
+
+hist(mie$BMI,breaks=20, main="BMI Distribution", sub="BMI")
+
+```
+
+
+```{r}
+
+table(mie$wt_loss_class4, exclude=NULL)
+
+```
+
+
+```{r}
+
+table(mie$mFrailty5, exclude=NULL)
+
+```
+
+```{r}
+table(mie$smg2preop,mie$Mort_90DH, exclude=NULL,dnn=c("SMG Preop","Mortality"))
+
+
+table(mie$mFrailty5,mie$Mort_90DH, exclude=NULL,dnn=c("mFrailty5","Mortality"))
+
+```
+
+```{r}
+table(mie$smg2preop,mie$Mort_90DH,mie$age75, exclude=NULL,dnn=c("SMG Preop","Mortality","Age75"))
+
+```
+
+```{r}
+table(mie$smg2preop,mie$DCNonHome01, exclude=NULL,dnn=c("SMG Preop","Discharage Dest"))
+
+
+table(mie$mFrailty5,mie$DCNonHome01, exclude=NULL,dnn=c("mFrailty5","Discharge Dest"))
+
+```
+
+
+
+# Complications
+
+
+```{r}
+table(mie$Pneumonia, mie$smg3preop, exclude=NULL)
+table(mie$Vent, mie$smg3preop, exclude=NULL)
+table(mie$Aleak, mie$smg3preop, exclude=NULL)
+
+```
+

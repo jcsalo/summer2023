@@ -1,0 +1,1605 @@
+---
+bibliography: zotero.bib
+output:
+  pdf_document: default
+  html_document: default
+  always_allow_html: true
+geometry: margin=0.6in
+params:
+  PHI: FALSE
+  archive: FALSE
+  collapse: FALSE
+  cox: FALSE
+  multivariable_continuous: TRUE
+  mFrailty: FALSE
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,message=FALSE,comment='',warning=FALSE)
+
+knitr::opts_chunk$set(dev = 'pdf')
+
+options(xtable.comment = FALSE)
+options(scipen = 999)
+
+library(readxl)
+library(lubridate)
+library(stringr)
+library(tidyverse)
+library(tibble)
+library(pander)
+library(janitor)
+library(tibble)
+library(cleaner)
+library(kableExtra)
+#library(writexl)
+library(whereami)
+library(odbc)
+library(bit64)
+library(survival)
+library(prodlim)
+library(reporttools)
+#library(gmodels)
+#library(crosstable)
+library(broom)
+library(tidyselect)
+library(MASS) # use for StepAIC
+
+source('functions_analysis.R')# 
+
+```
+
+---
+title: Body Composition and Esophagectomy Outcomes
+subtitle: '`r basename(thisfile())`' 
+
+
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+---
+<style type="text/css">
+.main-container {
+  max-width: 1200px!important;
+  margin-left: auto;
+  margin-right: auto;
+}
+</style>
+
+# Introduction
+
+Despite advanced in minimally-invasive and anesthetic techniques, esophagectomy remains a substantial operation associated with both perioperative morbidity and mortality.
+
+Sarcopenia, or loss of muscle mass, can occur in patients with weight loss due to gastrointestinal obstruction.  Loss of muscle mass is associated with poor survival for gastrointestinal cancer patients [@su82] [@wang25]
+
+Myosteatosis, or fatty infiltration of muscle tissue, occurs with advanced age and inactivity. Myosteatosis appears to be associated with adverse outcomes in cancer patients
+
+## Muscle mass measurement by CT
+
+Muscle mass and myosteasosis can be measured from CT scans obtained for routine medical care [@amini1671].  The abdominal wall muscle area at L3 is associated with skeletal muscle muscle mass [@mitsiopoulos115]
+
+Sarcopenia has been shown to be associated with postoperative complications after GI cancer surgery [@simonsen58]
+
+
+## NSQIP mFrailty Index
+
+[@subramaniam17]
+
+
+
+\clearpage
+
+# Collection cohort Minimally-invasive esophagectomy
+
+
+- Surgery Date after 1/1/2010 and before 7/1/2022
+- Mid-esophagus, distal esophagus or  GE junction (C15.4, C15.5, C16.0)
+- Esophagectomy at CMC by a single surgical team
+
+Excluded:
+
+- No staging scans available
+- Clinical information not available
+
+# Outcomes and complications
+
++ Anastomotic Leak (*Aleak*)
++ Pneumonia (*Pneumonia*)
++ Prolonged Ventilation (*Vent*)
++ Pulmonary Complications (aggregate) (*pulmcx*)
++ Discharge Home (*DCHome*) 
++ log(LengthofStay) = (*loglos*) (due to skewed nature of data) (Gaussian distribution)
++ Readmission within 30 days (*Readm30*)
++ Mortality at 90 days (*Mort_90DH*)
+
+
+## Independent variable of Interest: 
+
+### Muscle mass and Density (myosteatosis)
++ smi_preop (skeletal muscle index = cross-sectional muscle area (-29 to 150HU)/(height in m^2)) = **SMI**
++ density_preop (mean Hounsefield units of abdominal wall musculature = muscle density) = **SMD**
++ smg_preop skeletal muscle gauge = skeletal muscle index * abdominal wall muscle density
++ sarco (binary *sarco*) (skeletal muscle index threshold from Prado et al)
++ smg2preop quartiles 1 vs 2 vs 3+4 of Skeletal Muscle Gauge
++ sarco_dx: sarcopenia at diagnosis (definition of [@prado629])
++ scaco_preop: sarcopenia at time of surgery (definition of [@prado629])
+
+### Independent variables (co-variates): 
+
++ age, sex, Race,Histo, BMI,ChemoRT
++ NSQIP mFrailty5 (co-morbidity index)
++ AJCC Clinical T classification: *mcT_* (1 | 2 | 3)
++ AJCC Clinical N Classification: *cN_* (1 | 2 | 3)
++ AJCC Pathologic T Classficiation: *mpT_* ( 0 | 1 | 2 | 3) - Mortality at 1year only
++ Ajcc Pathologic N Classification: *mpN_* ( 0 | 1 | 2 | 3) - Mortality at 1year only
++ Prior neoadjuvant therapy (*ChemoRT*)
+
+
+# Colinear Variables
+
+Measures of body composition (SMI=*smi_preop*, SMD=*density_preop*) are all highly correlated.  Skeletal Muscle Gauge (SMG) is the product of SMI and SMD.
+
+Patients who present with clinical T3 tumors were generally treated with preop chemoradiation 
+
+Body composition measures decline with age and are higher in men than women.
+
+# Variables of Interest 
+
+Preoperative skeletal muscle index (SMI) (*smi_preop*), Preoperative Muscle Density (SMD) (*density_preop*), Skeletal Muscle Gauge (*SMG*) are all continuous. For clinical utility, these have been categorized: 
+
+Q1= Quartile 1 (lowest)
+Q234= Quartile 2 + Quartile 3 + Quartile 4
+
+
+This allows the identification of a small (25%) cohort of high-risk patients.  This very closely mirrors the categorization of grip strength by the FNIH criteria (Low vs Intermediate vs Normal)
+
+The advantage of this approach is that it tailors the analysis technique to the clinical decision-making, so that high-risk patients are identified for whom alternate (non-operative) treatments or interventions (pre-habilitation) may be appropriate.  
+
+This approach also allows that the important biologic impact of these variables on outcomes does not occur throughout the range of the variables of interest, but occurs on the low (bottom quartile) end of the range.
+
+It will be important that categorical variables be analyzed as ordered rather than categorical variables.
+
+# Methods
+
+Abdominal CT scans obtained for routine care were used to identify the slice corresponding to the transverse process of Lumbar 3 (L3) vertebra.  Images were analysed in NIH ImageJ [@gomez-perez419] and the countour of the abdominal wall muscle traced. Skeletal muscle was measured using thresholds of -29 to + 150 HU. Sarcopenia was defined using the criteria of Prado et al [@prado629]
+
+
+# Cohort
+
+
+
+```{r, echo=F}
+
+mie_cohort_path <- '../data_export/mie_cohort.csv'
+mie_collection<-read_csv(mie_cohort_path)%>%
+  rename(Race = race4)%>%
+  mutate(CCI=as.numeric(CCI))%>%
+  as.data.frame()%>%
+  droplevels.data.frame()%>%
+  as.tibble()
+
+mie<-mie_collection%>%
+  filter(!is.na(smd_dx))
+
+paste('Collection cohort consists of',nrow(mie_collection),'eligible patients\n')%>%cat()
+
+paste('Analytic cohort consists of',nrow(mie),' patients with available CT scans suitable for reading')%>%cat()
+
+```
+
+## Demographics
+
+```{r}
+
+table(mie$sex, mie$Race, exclude=NULL, dnn=c("Sex","Race"))
+
+table(mie$sex, mie$ethnicity, exclude=NULL, dnn=c("Sex","Ethnicity"))
+
+paste('\nMedian Age: ',median(mie$age_dx, na.rm=T),'\n')%>%cat()
+
+paste('\nMinimum Age: ',min(mie$age_dx, na.rm=T),'\n')%>%cat()
+
+paste('\nMaximum Age: ',max(mie$age_dx, na.rm=T),'\n')%>%cat()
+
+
+```
+## Tumor Characteristics
+
+```{r}
+
+## Table of Histology *Histo*
+
+table(mie$Histo3, mie$Race, exclude=NULL, dnn=c("Histology","Race"))
+
+## Tables of Clinical T, N, M stages  (ncT,cN,cM)
+
+```
+## Insurance
+
+
+```{r}
+
+table(mie$insurance, mie$Race, exclude=NULL, dnn=c("Insurance","Race"))
+
+fisher.test(table(mie$insurance, mie$Race, exclude=NULL, dnn=c("Insurance","Race")))
+
+```
+## Social Deprivation Index
+
+
+```{r}
+
+paste('\nMedian SDI: ',median(mie$SDI, na.rm=T),'\n')%>%cat()
+
+paste('\nMinimum SDI: ',min(mie$SDI, na.rm=T),'\n')%>%cat()
+
+paste('\nMaximum SDI: ',max(mie$SDI, na.rm=T),'\n')%>%cat()
+
+paste('\nInterquartile Range: ',IQR(mie$SDI, na.rm=T),'\n')%>%cat()
+
+
+
+boxplot(SDI ~ Race, data=mie)
+kruskal.test(SDI ~ Race, data=mie)
+
+boxplot(SDI ~ insurance, data=mie)
+kruskal.test(SDI ~ insurance, data=mie)
+
+```
+
+## Mortality at 90 Days
+
+
+```{r}
+boxplot(mie$age_dx ~ mie$Mort_90DH)
+
+kruskal.test(mie$age_dx ~ mie$Mort_90DH)
+
+```
+## Mortality at 1 year
+
+
+```{r}
+boxplot(mie$age_dx ~ mie$Mort_360DH)
+
+kruskal.test(mie$age_dx ~ mie$Mort_360DH)
+
+```
+
+
+
+```{r}
+boxplot(mie$vati_preop ~ mie$Race)
+
+kruskal.test(mie$vati_preop ~ mie$Race)
+
+
+boxplot(mie$vati_preop ~ mie$Histo3)
+
+kruskal.test(mie$vati_preop ~ mie$Histo3)
+
+
+boxplot(mie$imati_preop ~ mie$Mort_360DH)
+
+kruskal.test(mie$imati_preop ~ mie$Mort_360DH)
+
+
+boxplot(mie$vati_preop ~ mie$wt_loss_class4)
+
+kruskal.test(mie$vati_preop ~ mie$wt_loss_class4)
+
+boxplot(mie$sati_preop ~ mie$wt_loss_class4)
+
+kruskal.test(mie$sati_preop ~ mie$wt_loss_class4)
+
+
+cor.test(mie$vati_preop,mie$prior_wt_percent)
+
+
+cor.test(mie$sati_preop,mie$prior_wt_percent)
+
+
+cor.test(mie$vati_preop,mie$BMI)
+
+
+cor.test(mie$sati_preop,mie$BMI)
+```
+
+```{r}
+
+table(mie$ChemoRT, mie$Histo3, exclude=NULL, dnn=c("ChemoRT","Histology"))
+
+fisher.test(table(mie$ChemoRT, mie$Histo3, exclude=NULL, dnn=c("Insurance","Race")))
+
+```
+
+```{r}
+plot(mie$sati_preop,mie$BMI)
+
+```
+
+## BMI
+
+
+```{r}
+
+hist(mie$BMI,breaks=20, main="BMI Distribution", sub="BMI")
+
+```
+
+
+```{r}
+
+table(mie$wt_loss_class4, exclude=NULL)
+
+```
+
+
+```{r}
+
+table(mie$mFrailty5, exclude=NULL)
+
+```
+
+```{r}
+table(mie$smg2preop,mie$Mort_90DH, exclude=NULL,dnn=c("SMG Preop","Mortality"))
+
+
+table(mie$mFrailty5,mie$Mort_90DH, exclude=NULL,dnn=c("mFrailty5","Mortality"))
+
+```
+
+```{r}
+table(mie$smg2preop,mie$Mort_90DH,mie$age75, exclude=NULL,dnn=c("SMG Preop","Mortality","Age75"))
+
+```
+
+```{r}
+table(mie$smg2preop,mie$DCNonHome01, exclude=NULL,dnn=c("SMG Preop","Discharage Dest"))
+
+
+table(mie$mFrailty5,mie$DCNonHome01, exclude=NULL,dnn=c("mFrailty5","Discharge Dest"))
+
+```
+
+
+
+# Complications
+
+
+```{r}
+table(mie$Pneumonia, mie$smg3preop, exclude=NULL)
+
+```
+
+
+\clearpage
+
+## Patent Characteristics by Body Composition Group
+
+```{r, results='asis'}
+GroupSMG2preop<-mie_bc[,"smg2preop"]
+#GroupSMG<-miedata[,"SMG3"]
+
+character2<-c("sex", "race3", "Histo","weight_class4", "mcT_","cN_","cM","ChemoRT","mpT_", "mpN_","pM")
+character3<-c("sex","race3")
+tableNominal(vars=characteristics1, longtable=FALSE,cumsum=FALSE, cap="Patient Characteristics by Body Composition Group", group=GroupSMG2preop, print.pval = c("fisher"))
+
+
+
+```
+
+\clearpage
+
+### Patent Characteristics by Body Composition Group - Continuous Variables
+
+```{r, results='asis'}
+stats1<-c("min","q1","median","q3","iqr","max")
+demo22<-mie_bc[,c("age_dx","BMI","smg_preop","smi_preop","density_preop","CCI")]
+tableContinuous(vars=demo22, longtable=FALSE, cumsum=FALSE, cap="Characteristics by Body Composition Group", stats=stats1,font.size="normalsize",group=GroupSMG2preop,print.pval="kruskal",prec=3)
+
+```
+\clearpage
+
+## Patent Characteristics by Sarcopenia
+
+```{r, results='asis'}
+GroupSarcopreop<-mie_bc[,"sarco_preop"]
+#GroupSMG<-miedata[,"SMG3"]
+
+character2<-c("sex", "race3", "Histo","weight_class4", "mcT_","cN_","cM","ChemoRT","mpT_", "mpN_","pM")
+character3<-c("sex","race3")
+tableNominal(vars=characteristics1, longtable=FALSE,cumsum=FALSE, cap="Patient Characteristics by Sarcoenia", group=GroupSarcopreop, print.pval = c("fisher"))
+
+
+
+```
+
+\clearpage
+
+### Patent Characteristics by Sarcopenia - Continuous Variables
+
+```{r, results='asis'}
+stats1<-c("min","q1","median","q3","iqr","max")
+demo22<-mie_bc[,c("age_dx","BMI","smg_preop","smi_preop","density_preop","CCI")]
+tableContinuous(vars=demo22, longtable=FALSE, cumsum=FALSE, cap="Characteristics by Sarcopenia", stats=stats1,font.size="normalsize",group=GroupSarcopreop,print.pval="kruskal",prec=3)
+
+```
+
+
+
+\clearpage
+
+## Outcomes
+
+```{r, results='asis'}
+comps1<-mie_bc[,c("Thoracotomy","Laparotomy","AnastomosisLoc","Aleak","Pneumonia","Vent","Trach","Reintube","pulmcx","Stroke","AtrialArryth","MI","Readm30","DCHome","Mort_90DH")]
+tableNominal(vars=comps1, longtable=FALSE,cumsum=FALSE, cap="Outcomes" )
+```
+
+
+\clearpage
+
+### Outcomes - Continuous Variables
+
+
+
+```{r, results='asis'}
+tableContinuous(vars=demo22, longtable=FALSE, cumsum=FALSE, cap="Outcomes", stats=stats1,font.size="normalsize",group=GroupSarcopreop,print.pval="kruskal",prec=3)
+
+```
+
+
+
+
+\clearpage
+
+## Outcomes by Histo
+
+```{r, results='asis'}
+GroupHisto<-mie_bc[,"Histo"]
+
+tableNominal(vars=comps1, longtable=FALSE,cumsum=FALSE, cap="Outcomes by Histology", group=GroupHisto, print.pval = c("fisher"))
+
+```
+
+
+
+
+\clearpage
+
+## Outcomes by Body Composition Group
+
+```{r, results='asis'}
+GroupSMG2preop<-mie_bc[,"smg2preop"]
+tableNominal(vars=comps1, longtable=FALSE,cumsum=FALSE, cap="Outcomes by Body Composition Group", group=GroupSMG2preop, print.pval = c("fisher"))
+
+```
+
+\clearpage
+
+### Outcomes by Body Composition Group - Continuous Variables
+
+```{r, results='asis'}
+tableContinuous(vars=demo22, longtable=FALSE, cumsum=FALSE, cap="Characteristics by Sarcopenia", stats=stats1,font.size="normalsize",group=GroupSarcopreop,print.pval="kruskal",prec=3)
+
+```
+
+
+
+
+\clearpage
+
+## Outcomes by Sarcopenia
+
+```{r, results='asis'}
+GroupSarcopreop<-mie_bc[,"sarco_preop"]
+tableNominal(vars=comps1, longtable=FALSE,cumsum=FALSE, cap="Outcomes by Sarcopenia", group=GroupSarcopreop, print.pval = c("fisher"))
+rm(comps1)
+
+```
+
+\clearpage
+
+### Outcomes by Sarcopenia - Continuous Variables
+
+
+```{r, results='asis'}
+tableContinuous(vars=demo22, longtable=FALSE, cumsum=FALSE, cap="Characteristics by Body Composition Group", stats=stats1,font.size="normalsize",group=GroupSarcopreop,print.pval="kruskal",prec=3)
+
+```
+
+\clearpage
+
+# Mortality Risk at 90 Days
+
+## Univariate Analysis
+
+Generalized Linear Model constructed with pertinent variables. Variables with a p value less than 0.15 were included in the multivariable model. Because of the strong co-linearity for sarcopenia, skeletal muscle index, skeletal muscle density, and skeletal muscle gauge, separate models were constructed for each of these variables.
+
+```{r, echo=F}
+source('functions_analysis.R')
+varslist_all<-c("sex","age_dx","race3","mFrailty5","Histo","BMI","PriorET",
+                "ChemoRT","mcT_","cN_","mpT_","mpN_","sarco_preop",
+                  "smi_preop","smg_preop","density_preop","wt_loss_class4")
+
+pander(function.uniglms(outcome=mie_bc$Mort_9001,varslist=varslist_all,glm_family="binomial",glm_dataframe=mie_bc), row.names=FALSE)
+```
+\clearpage
+
+### Multivariable model with sarcopenia (Prado definition)
+
+```{r, echo=F}
+cat('Continuous Body Composition Variables Multivariable GLM model:Mortality at 90 Days' )
+
+
+varslist_Mort_multi <-c("age_dx","mFrailty5","Histo","mcT_","sarco_preop")
+MORT90_mglm<-function.multiglm(outcome=mie_bc$Mort_9001,outvar="Mort_9001",varlist=varslist_Mort_multi,glm_family="binomial",glm_dataframe=mie_bc)
+
+pander(MORT90_mglm[[2]],caption=MORT90_mglm[[1]])
+```
+
+### Multivariable model with Skeletal Muscle Index
+
+```{r, echo=F}
+cat('Continuous Body Composition Variables Multivariable GLM model:Mortality at 90 Days' )
+
+
+varslist_Mort_multi <-c("age_dx","mFrailty5","Histo","mcT_","smi_preop")
+MORT90_mglm<-function.multiglm(outcome=mie_bc$Mort_9001,outvar="Mort_9001",varlist=varslist_Mort_multi,glm_family="binomial",glm_dataframe=mie_bc)
+
+pander(MORT90_mglm[[2]],caption=MORT90_mglm[[1]])
+```
+
+### Multivariable model with Skeletal Muscle Density
+
+```{r, echo=F}
+cat('Continuous Body Composition Variables Multivariable GLM model:Mortality at 90 Days' )
+
+
+varslist_Mort_multi <-c("age_dx","mFrailty5","Histo","mcT_","density_preop")
+MORT90_mglm<-function.multiglm(outcome=mie_bc$Mort_9001,outvar="Mort_9001",varlist=varslist_Mort_multi,glm_family="binomial",glm_dataframe=mie_bc)
+```
+```{r, echo=F}
+pander(MORT90_mglm[[2]],caption=MORT90_mglm[[1]])
+```
+
+### Multivariable model with Skeletal Muscle Gauge
+
+```{r, echo=F}
+cat('Continuous Body Composition Variables Multivariable GLM model:Mortality at 90 Days' )
+
+
+varslist_Mort_multi <-c("age_dx","mFrailty5","Histo","mcT_","smg_preop")
+MORT90_mglm<-function.multiglm(outcome=mie_bc$Mort_9001,outvar="Mort_9001",varlist=varslist_Mort_multi,glm_family="binomial",glm_dataframe=mie_bc)
+
+pander(MORT90_mglm[[2]],caption=MORT90_mglm[[1]])
+```
+
+# Adenocarcinoma - Multivariable model with Skeletal Muscle Gauge
+
+```{r, echo=F}
+cat('Continuous Body Composition Variables Multivariable GLM model:Mortality at 90 Days' )
+
+mie_bc_adeno<-mie_bc%>%
+  filter(Histo=='Adeno')
+
+varslist_Mort_multi <-c("age_dx","mFrailty5","mcT_","smg_preop")
+MORT90_mglm<-function.multiglm(outcome=mie_bc_adeno$Mort_9001,outvar="Mort_9001",varlist=varslist_Mort_multi,glm_family="binomial",glm_dataframe=mie_bc_adeno)
+
+pander(MORT90_mglm[[2]],caption=MORT90_mglm[[1]])
+```
+
+# Composite Risk Group: Age <75 vs 75+ and SMG Q1 vs Q234
+
+Four risk categories constructed using dichotomous variables Age <75 vs Age 75+ and Skeletal Muscle Gauge Q1 vs Q234
+```{r, results='asis'}
+GroupRisk<-mie_bc[,"risk_group"]
+comps1<-mie_bc[,c("Thoracotomy","Laparotomy","AnastomosisLoc","Aleak","Pneumonia","Vent","Trach","Reintube","pulmcx","Stroke","AtrialArryth","MI","Readm30","DCHome","Mort_90DH")]
+tableNominal(vars=comps1, longtable=FALSE,cumsum=FALSE, cap="Outcomes by Risk Group", group=GroupRisk, print.pval = c("fisher"))
+rm(comps1)
+
+```
+
+
+
+
+
+
+\clearpage
+
+# References
+
+
+```{r kill9e345, echo=FALSE}
+knitr::knit_exit()
+#==============================================================================
+
+```
+
+
+
+
+## Survival Cox Model
+
+Analysis limited to patients with adenocarcinoma or squamous cell carcinoma
+
+### Univariate Analysis
+
+
+
+```{r}
+mie_bc_cancer<-mie_bc%>%
+  filter(Histo %in% c('Adeno','SCCA'))%>%
+  droplevels()%>%
+  droplevels.data.frame()
+
+pander (coxph(Surv(mie_bc_cancer$surv_mo,mie_bc_cancer$dead01) ~  sex  , data=mie_bc_cancer ))
+pander (coxph(Surv(mie_bc_cancer$surv_mo,mie_bc_cancer$dead01) ~  age_dx , data=mie_bc_cancer ))
+pander (coxph(Surv(mie_bc_cancer$surv_mo,mie_bc_cancer$dead01) ~  race3  , data=mie_bc_cancer ))
+pander (coxph(Surv(mie_bc_cancer$surv_mo,mie_bc_cancer$dead01) ~  Histo  , data=mie_bc_cancer ))
+pander (coxph(Surv(mie_bc_cancer$surv_mo,mie_bc_cancer$dead01) ~  BMI , data=mie_bc_cancer ))
+pander (coxph(Surv(mie_bc_cancer$surv_mo,mie_bc_cancer$dead01) ~  ChemoRT , data=mie_bc_cancer ))
+pander (coxph(Surv(mie_bc_cancer$surv_mo,mie_bc_cancer$dead01) ~  mcT_ , data=mie_bc_cancer ))
+pander (coxph(Surv(mie_bc_cancer$surv_mo,mie_bc_cancer$dead01) ~  cN_ , data=mie_bc_cancer ))
+pander (coxph(Surv(mie_bc_cancer$surv_mo,mie_bc_cancer$dead01) ~  mpT_ , data=mie_bc_cancer ))
+pander (coxph(Surv(mie_bc_cancer$surv_mo,mie_bc_cancer$dead01) ~  mpN_ , data=mie_bc_cancer ))
+pander (coxph(Surv(mie_bc_cancer$surv_mo,mie_bc_cancer$dead01) ~  sarco_preop , data=mie_bc_cancer ))
+pander (coxph(Surv(mie_bc_cancer$surv_mo,mie_bc_cancer$dead01) ~  smi_preop , data=mie_bc_cancer ))
+pander (coxph(Surv(mie_bc_cancer$surv_mo,mie_bc_cancer$dead01) ~  density_preop , data=mie_bc_cancer ))
+pander (coxph(Surv(mie_bc_cancer$surv_mo,mie_bc_cancer$dead01) ~  smg_preop , data=mie_bc_cancer ))
+pander (coxph(Surv(mie_bc_cancer$surv_mo,mie_bc_cancer$dead01) ~  smg_dx , data=mie_bc_cancer ))
+pander (coxph(Surv(mie_bc_cancer$surv_mo,mie_bc_cancer$dead01) ~  wt_loss_class4 , data=mie_bc_cancer ))
+```
+
+### Multivariable Model with Skeletal Muscle Gauge
+
+```{r, echo=F, eval=T, include=T}
+
+pander (coxph(Surv(mie_bc_cancer$surv_mo,mie_bc_cancer$dead01) ~  age_dx + sex + Histo + ChemoRT + mcT_ + cN_ + mpT_ + mpN_ +  smg_preop , data=mie_bc_cancer ))
+
+```
+
+
+
+```{r, eval=F}
+esurv<-Surv(mie_bc$surv_mo,mie_bc$dead01)
+
+cox_miebc<-summary (coxph(Surv(mie_bc_cancer$surv_mo,mie_bc_cancer$dead01) ~ age_dx + sex + race3 + Histo +  smg_preop, data=mie_bc ))
+
+
+fit<- coxph(Surv(mie_bc$surv_mo,mie_bc$dead01) ~ sex + race3 + insurance, data=mie_bc )
+
+pander(cox_miebc)
+
+#pander(cox_race)
+```
+
+```{r, echo=F}
+
+pander (coxph(Surv(mie_bc$surv_mo,mie_bc$dead01) ~  age_dx + sex + Histo +  smg_preop , data=mie_bc ))
+#"income5_",
+#  "Insurance"
+```
+
+```{r, echo=F}
+
+pander (coxph(Surv(mie_bc$surv_mo,mie_bc$dead01) ~ Rx3 , data=mie_bc ))
+#"income5_",
+#  "Insurance"
+```
+
+
+```{r, echo=F}
+
+pander (coxph(Surv(mie_bc$surv_mo,mie_bc$dead01) ~ age_dx + sex  + smg_dx +Rx3 , data=mie_bc ))
+#"income5_",
+#  "Insurance"
+```
+
+
+
+## Mortality at 1 year (calculated from end of radiation) 
+
+```{r, results='asis'}
+# Demographic Nominal (discrete) variables
+vars_mort<-c("mort_rad_180","mort_rad_365","mort_rad_3yr")
+#vars_demo<-c("race3","insurance_dx",insurance)
+vars_desc<-"Mortality"
+table_nom(vars_mort,vars_desc,Subset="Adeno",Group="Rx3",mie_bc)
+```
+
+```{r echo=FALSE, comment='',include = F}
+#cat('Univariate Analysis of predictors of death at 1 year')
+cat('Univariate Analysis (factors were included in multivariate if p<0.15)')
+```
+
+```{r  eval=FALSE, echo=FALSE, comment='', results='asis', warning=FALSE,include = F}
+pander(function.uniglms(outcome=mie_bc$mort_rad_365,varslist=varslist_all,glm_family="binomial",glm_dataframe=mie_bc), row.names=FALSE)
+```
+
+
+```{r  eval=F,include=FALSE, echo=FALSE, comment='', warning=FALSE}
+
+cat('Adenocarcinoma Body Composition Variables Multivariable GLM model: Mortality at 1 year' )
+varslist_mor360_multi <-c("age_dx","smg_dx")
+pneumo_mglm<-function.multiglm(outcome=mort_rad_365,outvar="mort_rad_365",varlist=varslist_mor360_multi,glm_family="binomial",glm_dataframe=mie_bc)
+```
+```{r eval=F,  echo=FALSE, results='asis',include = F}
+pander(pneumo_mglm[[2]],caption=pneumo_mglm[[1]])
+rm(pneumo_mglm)
+```
+
+
+```{r}
+
+mie_bc_q1<-mie_bc%>%
+  filter(smg2dx==1)
+
+mie_bc_q1<-mie_bc%>%
+  filter(smg2dx==2)
+
+aca_resected<-mie_bc%>%
+  filter(Rx3=='ChemoRT+S')
+```
+
+
+### Adenocarcinoma in bottom quartile for Skeletal Muscle Gauge at Diagnosis
+
+Survival from the end of radiation
+
+```{r, results='asis'}
+# Demographic Nominal (discrete) variables
+#vars_mort<-c("mort_rad_180","mort_rad_365","mort_rad_3yr")
+#vars_demo<-c("race3","insurance_dx",insurance)
+vars_desc<-"Mortality"
+table_nom(vars_mort,vars_desc,Subset="Adeno",Group="Rx3",mie_bc_q1)
+```
+
+```{r eval=F,echo=FALSE, comment='',include = F}
+#cat('Univariate Analysis of predictors of death at 1 year among BOTTOM QUARTILE for SMG')
+cat('Univariate Analysis (factors were included in multivariate if p<0.15)')
+```
+
+```{r eval=F, eval=TRUE, echo=FALSE, comment='', results='asis', warning=FALSE,include = F}
+pander(function.uniglms(outcome=mie_bc_q1$mort_rad_365,varslist=varslist_all,glm_family="binomial",glm_dataframe=mie_bc_q1), row.names=FALSE)
+```
+
+```{r  eval=F,include=FALSE, echo=FALSE, comment='', warning=FALSE,include = F}
+
+cat('Adenocarcinoma Body Composition Variables Multivariable GLM model: Mortality at 1 year BOTTOM QUARTILE for SMG' )
+varslist_mor360_multi <-c("age_dx","Rx3")
+pneumo_mglm<-function.multiglm(outcome=mort_rad_365,outvar="mort_rad_365",varlist=varslist_mor360_multi,glm_family="binomial",glm_dataframe=mie_bc_q1)
+```
+```{r eval=F,  echo=FALSE, results='asis',include = F}
+pander(pneumo_mglm[[2]],caption=pneumo_mglm[[1]])
+rm(pneumo_mglm)
+```
+
+
+### Adenocarcinoma in top 3 quartiles for Skeletal Muscle Gauge at Diagnosis
+
+Survival from the end of radiation
+
+```{r, results='asis'}
+# Demographic Nominal (discrete) variables
+#vars_mort<-c("mort_rad_180","mort_rad_365","mort_rad_3yr")
+#vars_demo<-c("race3","insurance_dx",insurance)
+vars_desc<-"Mortality"
+table_nom(vars_mort,vars_desc,Subset="Adeno",Group="Rx3",mie_bc)
+```
+
+### Adenocarcinoma - Resected Patients -  Survival from surgery date
+
+n1 = Bottom quartile for Skeletal Muscle Gauge    n2 = Top three quartiles 
+
+```{r, results='asis'}
+# Demographic Nominal (discrete) variables
+vars_mort<-c("Mort_90DH","Mort_360DH")
+#vars_demo<-c("race3","insurance_dx",insurance)
+vars_desc<-"Mortality"
+table_nom(vars_mort,vars_desc,Subset="Adeno",Group="smg2dx",aca_resected)
+```
+
+```{r}
+aca_resected<-mie_bc%>%
+  filter(Rx3=='ChemoRT+S')
+
+hist(aca_resected$rad_surg_gap,breaks=80)
+
+hist(aca_resected$rad_surg_gap,xlim=c(0,200),breaks=80)
+```
+
+### Radiation-Surgery Gap
+
+
+```{r}
+
+mie_bc%>%
+  filter(rad_surg_gap>180)%>%
+  dplyr::select(PatID,dx_date, Histo,dx_date,rad_end_date,pt_op_date,rad_surg_gap)%>%
+  arrange(desc(rad_surg_gap))
+
+
+```
+
+**Will need to exclude patients with radiation-surgery gap greater than 180 days (n<20) to facilitate a common 'starting point' for survival in ChemoRT vs ChemoRT+S groups**
+
+
+
+## Adenocarcinoma - Survival by Treatment
+
+```{r}
+survRx3<-survfit(formula = Surv(surv_mo,dead01) ~ Rx3, data=mie_bc)
+median_tri_aca = summary(survRx3)$table[,'median'][[1]]
+median_crt_aca = summary(survRx3)$table[,'median'][[2]]
+
+tri_aca=nrow(mie_bc[mie_bc$Rx=='ChemoRT+S',]) # Number of adenocarcinoma treated with trimodality
+crt_aca=nrow(mie_bc[mie_bc$Rx=='ChemoRT' ,])
+#pander (survfit(formula = Surv(surv_mo,dead01) ~ Rx3, data=mie_bc))
+median_fu_aca<-quantile(prodlim(Hist(time=surv_mo,event=dead01)~1,data=mie_bc,reverse=TRUE))$quantile[[3,2]]
+
+
+surv_diff_aca<-survdiff( Surv(surv_mo,dead01) ~Tx4,data=mie_bc)
+#pander(surv_diff_aca)
+log_rank_p_aca = case_when(
+  broom::glance(surv_diff_aca)$p.value > 0.00001 ~ as.character(round(broom::glance(surv_diff_aca)$p.value,5)) ,
+  as.numeric(broom::glance(surv_diff_aca)$p.value) < 0.00001 ~ '<0.00001',
+  TRUE ~ '')
+plot(survfit(Surv(surv_mo,dead01) ~ Tx4, data=mie_bc), lwd=3, main = "Locally Advanced Adenocarcinoma Esophagus",sub="Curative Cohort = ChemoRT vs ChemoRT+Surgery", ylab="Survival",
+xlab = "Survival Time after Diagnosis in Months", lty=1,  col=c("red","blue","purple") ) # 
+legend(80,1,lwd=3,legend=c(paste("ChemoRT+S n=",tri_aca, "\nmedian=",median_tri_aca,"mo\n"),paste("ChemoRT n=",crt_aca,"\nmedian=",median_crt_aca,"mo")), lty=1, bty="n",title="Treatment",col=c("blue","red"))
+text(25,0.105,paste0('n=', nrow(mie_bc),'\n median followup ',median_fu_aca, ' months'))
+text(100,0.05,paste0('log rank p=', log_rank_p_aca))
+rm(log_rank_p_aca,surv_diff_aca,fit_aca,tri_aca,crt_aca,sexrace)
+```
+
+\clearpage
+
+# Adenocarcinoma - Stratify by SMG Q1 vs Q234
+
+## Survival at 1 year
+```{r, eval=T}
+
+smg2_aca<-survfit(formula = Surv(surv_mo,dead01) ~ Rx3+smg2dx, data=mie_bc)
+
+pander(smg2_aca)
+
+surv_1yr_Rx3_SMG2<-summary(survfit(Surv(surv_mo,dead01) ~ Rx3 + smg2dx, data = mie_bc), times = 12, extend=TRUE)
+
+surv_1yr_Rx3_SMG2
+
+
+surv_1yr_Rx3<-summary(survfit(Surv(surv_mo,dead01) ~ Rx3 , data = mie_bc), times = 12, extend=TRUE)
+
+surv_1yr_Rx3
+
+
+```
+
+## Survival at 3 year
+```{r, eval=T}
+
+summary(survfit(Surv(surv_mo,dead01) ~ Rx3 + smg2dx, data = mie_bc), times = 36, extend=TRUE)
+
+```
+
+
+
+```{r}
+
+median_fu_aca<-quantile(prodlim(Hist(time=surv_mo,event=dead01)~1,data=mie_bc,reverse=TRUE))$quantile[[3,2]]
+
+tri_q1=nrow(mie_bc[mie_bc$Rx=='ChemoRT+S' & mie_bc$smg2dx==1,])
+tri_q234=nrow(mie_bc[mie_bc$Rx=='ChemoRT+S' & mie_bc$smg2dx==2,])
+crt_q1=nrow(mie_bc[mie_bc$Rx=='ChemoRT' & mie_bc$smg2dx==1,])
+crt_q234=nrow(mie_bc[mie_bc$Rx=='ChemoRT' & mie_bc$smg2dx==2,])
+
+pander(survfit(formula = Surv(surv_mo,dead01) ~ Rx3+smg2dx, data=mie_bc))
+
+plot(survfit(Surv(surv_mo,dead01) ~ Rx3+smg2dx, data=mie_bc), lwd=3, main = "Locally Advanced Adenocarcinoma", ylab="Survival",
+xlab = "Survival Time after Diagnosis in Months", lty=c(3,1,3,1),  col=c("blue","blue","red","red") ) # 
+legend(45,.95,lwd=3,legend=c(paste("ChemoRT+Surgery Q234 n=",tri_q234),paste("ChemoRT+Surgery Q1 n=",tri_q1),paste("ChemoRT Q234 n=",crt_q234),paste("ChemoRT Q1 n=",crt_q1)), lty=c(1,3,1,3), bty="n",title="Treatment",col=c("blue","blue","red","red"))
+text(17,0.1,paste0('n=', nrow(mie_bc),'\n median followup ',median_fu_aca, ' mo'))
+rm(median_fu_aca)
+
+```
+
+
+```{r, echo=F}
+survsmg2<-survfit(formula = Surv(surv_mo,dead01) ~ Rx3+smg2dx, data=mie_bc)
+median_tri_q234 = summary(survsmg2)$table[,'median'][[2]]
+median_crt_q234 = summary(survsmg2)$table[,'median'][[4]]
+median_tri_q1 = summary(survsmg2)$table[,'median'][[1]]
+median_crt_q1 = summary(survsmg2)$table[,'median'][[3]]
+
+```
+
+
+
+
+
+```{r}
+## Adenocarcinoma Quartile 1 - Survival Difference with Surgery
+
+median_fu_aca<-quantile(prodlim(Hist(time=surv_mo,event=dead01)~1,data=mie_bc,reverse=TRUE))$quantile[[3,2]]
+
+tri_q1=nrow(mie_bc[mie_bc$Rx=='ChemoRT+S' & mie_bc$smg2dx==1,])
+crt_q1=nrow(mie_bc[mie_bc$Rx=='ChemoRT' & mie_bc$smg2dx==1,])
+
+mie_bc_q1<-mie_bc%>%
+  filter(smg2dx ==1)
+
+surv_diff_aca_q1<-survdiff( Surv(surv_mo,dead01) ~Rx3 ,data=mie_bc_q1)
+
+#p_aca_q1_Rx3<- round(1- pchisq(surv_diff_aca_q1$chisq,length(surv_diff_aca_q1$n)-1),4)
+log_rank_p_aca_q1 = case_when(
+  broom::glance(surv_diff_aca_q1)$p.value > 0.00001 ~ as.character(round(broom::glance(surv_diff_aca_q1)$p.value,5)) ,
+  as.numeric(broom::glance(surv_diff_aca_q1)$p.value) < 0.00001 ~ '<0.00001',
+  TRUE ~ '')
+
+plot(survfit(Surv(surv_mo,dead01) ~ Rx3, data=mie_bc_q1), lwd=3, main = "Locally Advanced Adenocarcinoma \n Bottom Quartile Skeletal Muscle Gauge", ylab="Survival",
+xlab = "Survival Time after End of Radiation in Months", lty=c(1,1,3,1),  col=c("blue","red","red","red") ) # 
+legend(45,1.1,lwd=3,legend=c(paste("ChemoRT+Surgery n=",tri_q1, "\nmedian= ",median_tri_q1,"mo"),paste("ChemoRT Q1 n=",crt_q1," \nmedian= ",median_crt_q1,"mo\n") ), lty=c(1,31,1,3), bty="n",title="Treatment",col=c("blue","red","red","red"))
+#text(17,0.1,paste0('n=', nrow(mie_bc),'\n median followup ',median_fu_aca, ' mo'))
+text(17,0.1,paste0('log rank p=',log_rank_p_aca_q1 ,'\n median followup ',median_fu_aca, ' mo'))
+
+```
+
+```{r}
+## Adenocarcinoma Quartile 2,34 - Survival Difference with Surgery
+
+#median_fu_aca<-quantile(prodlim(Hist(time=surv_mo,event=dead01)~1,data=mie_bc,reverse=TRUE))$quantile[[3,2]]
+
+tri_q234=nrow(mie_bc[mie_bc$Rx=='ChemoRT+S' & mie_bc$smg2dx==2,])
+crt_q234=nrow(mie_bc[mie_bc$Rx=='ChemoRT' & mie_bc$smg2dx==2,])
+
+mie_bc_q234<-mie_bc%>%
+  filter(smg2dx ==2)
+
+surv_diff_aca_q234<-survdiff( Surv(surv_mo,dead01) ~Rx3 ,data=mie_bc_q234)
+
+p_aca_q234_Rx3<- round(1- pchisq(surv_diff_aca_q234$chisq,length(surv_diff_aca_q234$n)-1),4)
+
+
+plot(survfit(Surv(surv_mo,dead01) ~ Rx3, data=mie_bc_q234), lwd=3, main = "Locally Advanced Adenocarcinoma \n Top 3 Quartiles Skeletal Muscle Gauge", ylab="Survival",
+xlab = "Survival Time after End of Radiation in Months", lty=c(1,1,3,1),  col=c("blue","red","red","red") ) # 
+legend(58,1.09,lwd=3,legend=c(paste("ChemoRT+Surgery n=",tri_q234,"\nmedian= ",median_tri_q234,"mo\n"),paste("ChemoRT n=",crt_q234, "\nmedian= ",median_crt_q234, "mo") ), lty=c(1,31,1,3), bty="n",title="Treatment",col=c("blue","red","red","red"))
+#text(17,0.1,paste0('n=', nrow(mie_bc),'\n median followup ',median_fu_aca, ' mo'))
+text(17,0.1,paste0('log rank p=',p_aca_q234_Rx3 ,'\n median followup ',median_fu_aca, ' mo'))
+
+```
+
+
+```{r, eval=T}
+
+smg2_aca<-survfit(formula = Surv(surv_mo,dead01) ~ Rx3+smg2dx, data=mie_bc)
+pander(smg2_aca)
+
+tri_q1_mediansurv = unname(summary(smg2_aca)$table[,'median'][1])
+tri_q234_mediansurv = unname(summary(smg2_aca)$table[,'median'][2])
+crt_q1_mediansurv = unname(summary(smg2_aca)$table[,'median'][3])
+crt_q1_mediansurv = unname(summary(smg2_aca)$table[,'median'][3])
+
+cat('\u03b1','\u223c','x')
+
+```
+
+
+
+Note that for low-risk patients in the top 3 quartiles for Skeletal Muscle Gauge, median survival is `r summary(survsmg2)$table[,'median'][[1]]` months with the addition of surgery and `r summary(survsmg2)$table[,'median'][[3]]` without.  
+
+For high-risk patients in the bottom quartile for Skeletal Muscel Gauge, median survival is  `r summary(survsmg2)$table[,'median'][[2]]` months with the addition of surgery and `r summary(survsmg2)$table[,'median'][[4]]` without.  
+
+
+
+
+
+
+
+
+```{r kill9e2, echo=FALSE}
+knitr::knit_exit()
+#==============================================================================
+
+```
+
+
+
+## Missing Dx Scans
+
+```{r}
+
+missing_dx<-la_eso_scans%>%
+  filter(is.na(density_dx))%>%
+  arrange(Rx3,dx_date)%>%
+  dplyr::select(Rx3,dx_date,PatID,first_name_phi)%>%
+  as_data_frame()%>%
+  print(n=200)
+
+#missing_dx
+
+
+```
+### Missing Pre-ChemoRT Scans
+
+```{r}
+missing_pcrt<-la_eso_scans%>%
+  filter(is.na(density_pcrt))%>%
+  arrange(Rx3,dx_date)%>%
+  dplyr::select(Rx3,dx_date,PatID,first_name_phi)%>%
+  as_data_frame()%>%
+  print(n=200)
+
+#missing_pcrt
+
+
+
+
+```
+
+### Missing Preop Scans
+
+```{r}
+missing_postcrt<-la_eso_scans%>%
+  filter(is.na(density_preop))%>%
+  arrange(Rx3,dx_date)%>%
+  dplyr::select(Rx3,dx_date,PatID,first_name_phi)%>%
+  as_data_frame()%>%
+  print(n=200)
+
+#missing_pcrt
+
+
+
+
+```
+
+
+## AGE
+
+Unsurprisingly, patients in the surgery group are younger than those in the chemoradiation alone group
+
+```{r wilcox, echo=F, comment=NA,eval=T}
+#kruskal.test(la_eso$age ~ la_eso$Rx2)
+boxplot(la_eso$age_dx ~ la_eso$Rx3, xlab="Treatment", ylab="Age at Diagnosis")
+
+
+```
+
+When patients are stratified by age<75 vs 75+, there are differences between the treatment groups.  The surgery group contains fewer patients over age 75, while the chemoradiation alone group has more patients over age 75.
+
+
+```{r, echo=F}
+addmargins(table(la_eso$smg2dx,la_eso$Rx3))
+kruskal.test(la_eso$age_dx ~ la_eso$Rx3)
+```
+```{r,eval=F}
+CrossTable(la_eso$smg2dx,la_eso$Rx3,prop.t=F,prop.chisq = F,resid=F,sresid=F,aresid=F,format="SAS",prop.c=F,digits=2, dnn=c("Age","Rx"))
+
+
+```
+
+
+
+```{r histogram, echo=F, include=F, comment=NA}
+#hist(la_eso$age_dx)
+hist(la_eso$age_dx,freq=FALSE, xlab = "Age", main="Distribution of Age",sub="LA EsoCA Data", col="light blue", xlim=c(2,100), ylim=c(0,0.05))
+curve(dnorm(x, mean=mean(la_eso$age_dx), sd = sd(la_eso$age_dx)), add=TRUE, col="darkblue", lwd=2)
+```
+
+
+
+
+## Histology
+
+When patients histology is added into the stratification of treatment and age <75 vs 75+, it is clear that there are relatively few patients with squamous cell carcinoma treated with surgery, and of those treated with surgery, fewer still with age >75.
+
+
+```{r, echo=F}
+addmargins(table(la_eso$smg2dx,la_eso$Rx3,la_eso$Histo))
+```
+\clearpage
+
+
+
+
+
+
+# Adenocarcinoma 
+
+```{r,echo=F, message=F, warning=F, eval=T}
+mie_bc<-la_eso%>%
+  filter(Histo=='Adeno')
+
+```
+
+
+```{r, eval=F}
+ct_mie_bc<-CrossTable(mie_bc$Rx3,mie_bc$survival1yr_postrt, prop.t=F,prop.chisq = F,resid=F,sresid=F,aresid=F,fisher=T, format="SAS",prop.c=F,digits=2, dnn=c("Rx","Survival at 1 year"))
+
+#addmargins(table(la_eso$survival1yr_postrt,la_eso$Rx3,la_eso$smg2dx))
+
+pander(ct_mie_bc, caption=attr(ct_aca_gt75,"Survival at 1 year Adenocarcinoma 75+"))
+
+
+```
+
+
+
+```{r, echo=F, eval=F, include=F,eval=params$cox}
+
+## Cox regression all adenocarcinoma
+
+#esurv<-Surv(la_eso$surv_mo,la_eso$dead01)
+
+agesexrx<-summary (coxph(Surv(mie_bc$surv_mo,mie_bc$dead01) ~ age_dx + race + sex  + Rx , data=mie_bc ))
+
+fit_aca<- coxph(Surv(mie_bc$surv_mo,mie_bc$dead01) ~age_dx + sex  + Rx, data=mie_bc )
+
+agesexrx
+
+```
+
+```{r, echo=F,eval=F}
+pander (coxph(Surv(mie_bc$surv_mo,mie_bc$dead01) ~ age_dx + race3 + sex  + Rx , data=mie_bc ))
+```
+
+
+
+
+## Adenocarcinoma - Survival by Treatment
+
+```{r}
+tri_aca=nrow(mie_bc[mie_bc$Rx=='ChemoRT+S',]) # Number of adenocarcinoma treated with trimodality
+crt_aca=nrow(mie_bc[mie_bc$Rx=='ChemoRT' ,])
+#pander (survfit(formula = Surv(surv_mo,dead01) ~ Rx3, data=mie_bc))
+median_fu_aca<-quantile(prodlim(Hist(time=surv_mo,event=dead01)~1,data=mie_bc,reverse=TRUE))$quantile[[3,2]]
+
+
+
+surv_diff_aca<-survdiff( Surv(surv_mo,dead01) ~Rx3,data=mie_bc)
+pander(surv_diff_aca)
+log_rank_p_aca = case_when(
+  broom::glance(surv_diff_aca)$p.value > 0.00001 ~ as.character(round(broom::glance(surv_diff_aca)$p.value,5)) ,
+  as.numeric(broom::glance(surv_diff_aca)$p.value) < 0.00001 ~ '<0.00001',
+  TRUE ~ '')
+plot(survfit(Surv(surv_mo,dead01) ~ Rx3, data=mie_bc), lwd=3, main = "Locally Advanced Adenocarcinoma Esophagus",sub="Curative Cohort = ChemoRT vs ChemoRT+Surgery", ylab="Survival",
+xlab = "Survival Time after Diagnosis in Months", lty=1,  col=c("blue","red") ) # 
+legend(60,.8,lwd=3,legend=c(paste("ChemoRT+S n=",tri_aca),paste("ChemoRT n=",crt_aca)), lty=1, bty="n",title="Treatment",col=c("blue","red"))
+text(25,0.1,paste0('n=', nrow(mie_bc),'\n median followup ',median_fu_aca, ' months'))
+text(100,0.05,paste0('log rank p=', log_rank_p_aca))
+rm(log_rank_p_aca,surv_diff_aca,fit_aca,tri_aca,crt_aca,sexrace)
+```
+
+\clearpage
+
+# Adenocarcinoma - Stratify by Age 75
+
+## Survival at 1 year
+```{r}
+
+summary(survfit(Surv(surv_mo,dead01) ~ Rx3 + smg2dx, data = mie_bc), times = 12)
+
+```
+
+### Adenocarcinoma <75
+
+```{r, echo=F}
+aca_lt75<-mie_bc%>%
+  filter(smg2dx=='<75')
+
+aca_lt75_table<-table(aca_lt75$Rx3,aca_lt75$survival1yr_postrt,dnn=c("Rx","Alive at 1yr"))
+
+aca_lt75_table
+
+fisher.test(aca_lt75_table)
+```
+
+
+### Adenocarcinoma 75+ 
+
+```{r, echo=F}
+
+
+aca_gt75<-mie_bc%>%
+  filter(smg2dx=='75+')
+
+aca_gt75_table<-table(aca_gt75$Rx3,aca_gt75$survival1yr_postrt,dnn=c("Rx","Alive at 1yr"))
+
+aca_gt75_table
+
+fisher.test(aca_gt75_table)
+```
+
+
+### Survival at 3 year
+```{r}
+summary(survfit(Surv(surv_mo,dead01) ~ Rx3 + smg2dx, data = mie_bc), times = 36)
+
+```
+
+
+
+
+```{r}
+
+median_fu_aca<-quantile(prodlim(Hist(time=surv_mo,event=dead01)~1,data=mie_bc,reverse=TRUE))$quantile[[3,2]]
+
+tri_lt75=nrow(mie_bc[mie_bc$Rx=='ChemoRT+S' & mie_bc$smg2dx=='<75',])
+tri_gt75=nrow(mie_bc[mie_bc$Rx=='ChemoRT+S' & mie_bc$smg2dx=='75+',])
+crt_lt75=nrow(mie_bc[mie_bc$Rx=='ChemoRT' & mie_bc$smg2dx=='<75',])
+crt_gt75=nrow(mie_bc[mie_bc$Rx=='ChemoRT' & mie_bc$smg2dx=='75+',])
+
+pander(survfit(formula = Surv(surv_mo,dead01) ~ Rx3+smg2dx, data=mie_bc))
+
+plot(survfit(Surv(surv_mo,dead01) ~ Rx3+smg2dx, data=mie_bc), lwd=3, main = "Locally Advanced Adenocarcinoma", ylab="Survival",
+xlab = "Survival Time after Diagnosis in Months", lty=c(1,3,1,3),  col=c("blue","blue","red","red") ) # 
+legend(45,.95,lwd=3,legend=c(paste("ChemoRT+Surgery <75 n=",tri_lt75),paste("ChemoRT+Surgery 75+ n=",tri_gt75),paste("ChemoRT <75 n=",crt_lt75),paste("ChemoRT 75+ n=",crt_gt75)), lty=c(1,3,1,3), bty="n",title="Treatment",col=c("blue","blue","red","red"))
+text(17,0.1,paste0('n=', nrow(mie_bc),'\n median followup ',median_fu_aca, ' mo'))
+rm(median_fu_aca)
+
+```
+
+
+```{r}
+
+surv75_aca<-survfit(formula = Surv(surv_mo,dead01) ~ Rx3+smg2dx, data=mie_bc)
+pander(surv75_aca)
+
+```
+
+
+```{r, echo=F}
+
+surv75<-survfit(formula = Surv(surv_mo,dead01) ~ Rx3+smg2dx, data=mie_bc)
+median_tri_lt75 = summary(surv75)$table[,'median'][[1]]
+median_crt_lt75 = summary(surv75)$table[,'median'][[3]]
+median_tri_gt75 = summary(surv75)$table[,'median'][[2]]
+median_crt_gt75 = summary(surv75)$table[,'median'][[4]]
+
+```
+Note that for patients less than age 75, median survival is `r summary(surv75)$table[,'median'][[1]]` months with the addition of surgery and `r summary(surv75)$table[,'median'][[3]]` without.  
+
+For patients greater than age 75, median survival is  `r summary(surv75)$table[,'median'][[2]]` months with the addition of surgery and `r summary(surv75)$table[,'median'][[4]]` without.  
+
+
+
+\clearpage
+
+# Adenocarcinoma Age <75
+
+
+```{r,eval=params$cox}
+pander (coxph(Surv(aca_lt75$surv_mo,aca_lt75$dead01) ~ age_dx + race3 + sex  + Rx , data=aca_lt75 ))
+```
+
+```{r,echo=F, message=F, warning=F}
+median_fu<-quantile(prodlim(Hist(time=surv_mo,event=dead01)~1,data=aca_lt75,reverse=TRUE))$quantile[[3,2]]
+
+pander(survfit(formula = Surv(surv_mo,dead01) ~ Rx3, data=aca_lt75))
+surv_diff<-survdiff( Surv(surv_mo,dead01) ~Rx3,data=aca_lt75)
+pander(surv_diff)
+
+log_rank_p = case_when(
+  broom::glance(surv_diff)$p.value > 0.00001 ~ as.character(round(broom::glance(surv_diff)$p.value,5)) ,
+  as.numeric(broom::glance(surv_diff)$p.value) < 0.00001 ~ '<0.00001',
+  TRUE ~ '')
+
+
+plot(survfit(Surv(surv_mo,dead01) ~ Rx3, data=aca_lt75), lwd=3, main = "Adenocarcinoma - Age <75", ylab="Survival",
+xlab = "Survival Time after Diagnosis in Months", lty=c(1),  col=c("blue","red"),xmax=60 ) # 
+
+legend(20,1.0,lwd=3,legend=c(paste("ChemoRT+Surgery n=",tri_lt75,"median=",median_tri_lt75,"mo"),paste("ChemoRT n=",crt_lt75,"median=",median_crt_lt75,"mo")), lty=1, bty="n",title="Treatment",col=c("blue","red"))
+
+text(15,0.1,paste0('n=', nrow(aca_lt75),'\n median followup ',median_fu, ' months'))
+text(45,0.07,paste0('log rank p=', log_rank_p))
+
+
+png(file="../derived/adeno_lt75.png",width=600, height=350)
+plot(survfit(Surv(surv_mo,dead01) ~ Rx3, data=aca_lt75), lwd=3, main = "Adenocarcinoma - Age <75", ylab="Survival",
+xlab = "Survival Time after Diagnosis in Months", lty=c(1),  col=c("blue","red"),xmax=60 ,cex=1.2) # 
+
+legend(21,.97,lwd=3,legend=c(paste("ChemoRT+Surgery n=",tri_lt75,"median=",median_tri_lt75,"mo"),paste("ChemoRT n=",crt_lt75,"median=",median_crt_lt75,"mo")), lty=1, bty="n",title="Treatment",col=c("blue","red"),cex=1.2)
+
+text(15,0.1,paste0('n=', nrow(aca_lt75),'\n median followup ',median_fu, ' months'),cex=1.2)
+text(45,0.07,paste0('log rank p=', log_rank_p),cex=1.2)
+dev.off()
+
+
+rm(median_fu,log_rank_p,surv_diff)
+
+```
+
+
+\clearpage
+
+# Adenocarcinoma Age 75+
+
+```{r, echo=F, eval=F}
+
+
+pander(addmargins(table(aca_gt75$smg2dx,aca_gt75$Rx3,aca_gt75$survival1yr_postrt)))
+
+```
+
+
+
+```{r,eval=params$cox}
+pander (coxph(Surv(aca_gt75$surv_mo,aca_gt75$dead01) ~ age_dx + race3 + sex  + Rx , data=aca_gt75 ))
+```
+
+
+
+```{r,echo=F, message=F, warning=F}
+
+median_fu<-quantile(prodlim(Hist(time=surv_mo,event=dead01)~1,data=aca_gt75,reverse=TRUE))$quantile[[3,2]]
+pander(survfit(formula = Surv(surv_mo,dead01) ~ Rx3, data=aca_gt75))
+
+surv_diff<-survdiff( Surv(surv_mo,dead01) ~Rx3,data=aca_gt75)
+
+pander(surv_diff)
+
+log_rank_p = case_when(
+  broom::glance(surv_diff)$p.value > 0.00001 ~ as.character(round(broom::glance(surv_diff)$p.value,5)) ,
+  as.numeric(broom::glance(surv_diff)$p.value) < 0.00001 ~ '<0.00001',
+  TRUE ~ '')
+
+
+
+plot(survfit(Surv(surv_mo,dead01) ~ Rx3, data=aca_gt75), lwd=3, main = "Adenocarcinoma - Age 75+", ylab="Survival",
+xlab = "Survival Time after Diagnosis in Months", lty=1,  col=c("blue","red"),xmax=60 ) # 
+
+legend(18,.95,lwd=3,legend=c(paste("ChemoRT+Surgery n=",tri_gt75,"median=",median_tri_gt75,"mo"),paste("ChemoRT n=",crt_gt75,"median=",median_crt_gt75,"mo")), lty=1, bty="n",title="Treatment",col=c("blue","red"))
+
+text(19,0.05,paste0('n=', nrow(aca_gt75),'\n median followup ',median_fu, ' months'))
+text(50,0.20,paste0('log rank p=', log_rank_p))
+
+
+
+png(file="../derived/adeno_gt75.png",width=600, height=350)
+plot(survfit(Surv(surv_mo,dead01) ~ Rx3, data=aca_gt75), lwd=3, main = "Adenocarcinoma - Age 75+", ylab="Survival",
+xlab = "Survival Time after Diagnosis in Months", lty=1,  col=c("blue","red"),xmax=60 ,cex=1.4) # 
+
+legend(18,.97,lwd=3,legend=c(paste("ChemoRT+Surgery n=",tri_gt75,"median=",median_tri_gt75,"mo"),paste("ChemoRT n=",crt_gt75,"median=",median_crt_gt75,"mo")), lty=1, bty="n",title="Treatment",col=c("blue","red"),cex=1.2)
+
+text(19,0.05,paste0('n=', nrow(aca_gt75),'\n median followup ',median_fu, ' months'),cex=1.2)
+text(50,0.22,paste0('log rank p=', log_rank_p),cex=1.2)
+dev.off()
+
+
+rm(median_fu,log_rank_p,surv_diff)
+
+```
+```{r}
+rm(aca_gt75,aca_lt75,crt_lt75,crt_gt75,eso_lt75,mie_bc,mie_bc1yr,median_crt_gt75,median_crt_lt75,median_tri_lt75,median_tri_gt75,surv75,tri_gt75,tri_lt75)
+```
+
+\clearpage
+
+# Squamous Cell Carcinoma
+
+```{r}
+la_scca<-la_eso%>%
+  filter(Histo=='SCCA')
+```
+
+## Survival at 1 year
+```{r}
+
+summary(survfit(Surv(surv_mo,dead01) ~ Rx3 + smg2dx, data = la_scca), times = 12)
+
+```
+
+## Survival by Treatment
+
+
+```{r}
+
+median_fu<-quantile(prodlim(Hist(time=surv_mo,event=dead01)~1,data=la_scca,reverse=TRUE))$quantile[[3,2]]
+
+pander(survfit(formula = Surv(surv_mo,dead01) ~ Rx3, data=la_scca))
+surv_diff<-survdiff( Surv(surv_mo,dead01) ~Rx3,data=la_scca)
+pander(surv_diff)
+
+log_rank_p = case_when(
+  broom::glance(surv_diff)$p.value > 0.00001 ~ as.character(round(broom::glance(surv_diff)$p.value,5)) ,
+  as.numeric(broom::glance(surv_diff)$p.value) < 0.00001 ~ '<0.00001',
+  TRUE ~ '')
+
+plot(survfit(Surv(surv_mo,dead01) ~ Rx3, data=la_scca), lwd=3, main = "Locally Advanced Squamous Esophagus",sub="Curative Cohort = ChemoRT vs ChemoRT+Surgery", ylab="Survival",
+xlab = "Survival Time after Diagnosis in Months",xlim=c(0,120), lty=1,  col=c("blue","red") ) # 
+legend(80,.8,lwd=3,legend=c("ChemoRT","ChemoRT+S"), lty=1, bty="n",title="Treatment",col=c("red","blue"))
+text(25,0.1,paste0('n=', nrow(la_scca),'\n median followup ',median_fu, ' months'))
+#text(25,0.1,paste0('n=', nrow(la_scca)))
+text(90,0.25,paste0('log rank p=', log_rank_p))
+rm(log_rank_p,surv_diff)
+```
+
+\clearpage
+
+## Squamous Cell Carcinoma Stratify by Age 75
+
+
+
+```{r,echo=F, message=F, warning=F}
+tri_lt75=nrow(la_scca[la_scca$Rx=='ChemoRT+S' & la_scca$smg2dx=='<75',])
+tri_gt75=nrow(la_scca[la_scca$Rx=='ChemoRT+S' & la_scca$smg2dx=='75+',])
+crt_lt75=nrow(la_scca[la_scca$Rx=='ChemoRT' & la_scca$smg2dx=='<75',])
+crt_gt75=nrow(la_scca[la_scca$Rx=='ChemoRT' & la_scca$smg2dx=='75+',])
+
+pander(survfit(formula = Surv(surv_mo,dead01) ~ Rx3+smg2dx, data=la_scca))
+
+plot(survfit(Surv(surv_mo,dead01) ~ Rx3+smg2dx, data=la_scca), lwd=3, main = "Locally Advanced Squamous Call Carcinoma", ylab="Survival",
+xlab = "Survival Time after Diagnosis in Months", lty=c(1,3,1,3),  col=c("blue","blue","red","red") ) # 
+legend(42,.35,lwd=3,legend=c(paste("ChemoRT+Surgery <75 n=",tri_lt75),paste("ChemoRT+Surgery 75+ n=",tri_gt75),paste("ChemoRT <75 n=",crt_lt75),paste("ChemoRT 75+ n=",crt_gt75)), lty=c(1,3,1,3), bty="n",col=c("blue","blue","red","red"))
+text(17,0.1,paste0('n=', nrow(la_scca),'\n median followup ',median_fu, ' months'))
+rm(median_fu)
+
+```
+
+\clearpage
+
+# Squamous cell Age <75
+
+
+```{r,echo=F, message=F, warning=F}
+
+scca_lt75<-la_scca%>%
+  filter(smg2dx=='<75')
+
+median_fu<-quantile(prodlim(Hist(time=surv_mo,event=dead01)~1,data=scca_lt75,reverse=TRUE))$quantile[[3,2]]
+
+pander(survfit(formula = Surv(surv_mo,dead01) ~ Rx3, data=scca_lt75))
+
+surv_diff<-survdiff( Surv(surv_mo,dead01) ~Rx3,data=scca_lt75)
+
+pander(surv_diff)
+
+log_rank_p = case_when(
+  broom::glance(surv_diff)$p.value > 0.00001 ~ as.character(round(broom::glance(surv_diff)$p.value,5)) ,
+  as.numeric(broom::glance(surv_diff)$p.value) < 0.00001 ~ '<0.00001',
+  TRUE ~ '')
+
+
+plot(survfit(Surv(surv_mo,dead01) ~ Rx3, data=scca_lt75), lwd=3, main = "Squamous Cell - Age <75", ylab="Survival",
+xlab = "Survival Time after Diagnosis in Months", lty=c(1),  col=c("blue","red") ) # 
+legend(60,.95,lwd=3,legend=c("ChemoRT+Surgery","ChemoRT"), lty=1, bty="n",title="Treatment",col=c("blue","red"))
+text(17,0.1,paste0('n=', nrow(scca_lt75),'\n median followup ',median_fu, ' months'))
+text(80,0.05,paste0('log rank p=', log_rank_p))
+rm(median_fu,log_rank_p,surv_diff)
+```
+\clearpage
+
+# Squamous Cell Age 75+
+
+
+```{r,echo=F, message=F, warning=F}
+
+scca_gt75<-la_scca%>%
+  filter(smg2dx=='75+')
+median_fu<-quantile(prodlim(Hist(time=surv_mo,event=dead01)~1,data=scca_gt75,reverse=TRUE))$quantile[[3,2]]
+#median_survival_gt75<-quantile(prodlim(Hist(time=surv_mo,event=dead01)~1,data=aca_gt75,reverse=FALSE))$quantile[[3,2]]
+
+pander(survfit(formula = Surv(surv_mo,dead01) ~ Rx3, data=scca_gt75))
+
+surv_diff<-survdiff( Surv(surv_mo,dead01) ~Rx3,data=scca_gt75)
+
+pander(surv_diff)
+
+log_rank_p = round(broom::glance(surv_diff)$p.value,3)
+
+plot(survfit(Surv(surv_mo,dead01) ~ Rx3, data=scca_gt75), lwd=3, main = "Squamous Cell - Age 75+", ylab="Survival",xlim=c(0,120),
+xlab = "Survival Time after Diagnosis in Months", lty=1,  col=c("blue","red") ) # 
+legend(60,.95,lwd=3,legend=c("ChemoRT+Surgery","ChemoRT"), lty=1, bty="n",title="Treatment",col=c("blue","red"))
+text(22,0.1,paste0('n=', nrow(scca_gt75),'\n median followup ',median_fu, ' months'))
+text(90,0.25,paste0('log rank p=', log_rank_p))
+rm(median_fu,log_rank_p,surv_diff)
+```
+
+
+
+# Survival by Treatment (all histologies)
+
+
+
+```{r}
+tri=nrow(la_eso[la_eso$Rx=='ChemoRT+S',])
+crt=nrow(la_eso[la_eso$Rx=='ChemoRT' ,])
+median_fu<-quantile(prodlim(Hist(time=surv_mo,event=dead01)~1,data=la_eso,reverse=TRUE))$quantile[[3,2]]
+pander (survfit(formula = Surv(surv_mo,dead01) ~ Rx3, data=la_eso))
+
+surv_diff<-survdiff( Surv(surv_mo,dead01) ~Rx3,data=la_eso)
+pander(surv_diff)
+surv75<-survfit(formula = Surv(surv_mo,dead01) ~ Rx3+smg2dx, data=la_eso)
+pander(surv75)
+log_rank_p = case_when(
+  broom::glance(surv_diff)$p.value > 0.00001 ~ as.character(round(broom::glance(surv_diff)$p.value,5)) ,
+  as.numeric(broom::glance(surv_diff)$p.value) < 0.00001 ~ '<0.00001',
+  TRUE ~ '')
+plot(survfit(Surv(surv_mo,dead01) ~ Rx3, data=la_eso), lwd=3, main = "Locally Advanced Esophageal Cancer",sub="ChemoRT vs ChemoRT+Surgery", ylab="Survival",
+xlab = "Survival Time after Diagnosis in Months", lty=1,  col=c("blue","red") ) # 
+legend(60,.8,lwd=3,legend=c(paste("ChemoRT+S n=",tri),paste("ChemoRT n=",crt)), lty=1, bty="n",title="Treatment",col=c("blue","red"))
+text(20,0.1,paste0('n=', nrow(la_eso),'\n median followup ',median_fu, ' months'))
+text(90,0.05,paste0('log rank p=', log_rank_p))
+rm(log_rank_p,surv_diff,tri,crt,median_fu)
+```
+## Age <75 (all histologies)
+
+```{r,echo=F, message=F, warning=F}
+eso_lt75<-la_eso%>%
+  filter(smg2dx=='<75')
+
+tri_lt75=nrow(la_eso[la_eso$Rx=='ChemoRT+S' & la_eso$smg2dx=='<75',])
+tri_gt75=nrow(la_eso[la_eso$Rx=='ChemoRT+S' & la_eso$smg2dx=='75+',])
+crt_lt75=nrow(la_eso[la_eso$Rx=='ChemoRT' & la_eso$smg2dx=='<75',])
+crt_gt75=nrow(la_eso[la_eso$Rx=='ChemoRT' & la_eso$smg2dx=='75+',])
+
+surv75<-survfit(formula = Surv(surv_mo,dead01) ~ Rx3+smg2dx, data=la_eso)
+median_tri_lt75 = summary(surv75)$table[,'median'][[1]]
+median_crt_lt75 = summary(surv75)$table[,'median'][[3]]
+median_tri_gt75 = summary(surv75)$table[,'median'][[2]]
+median_crt_gt75 = summary(surv75)$table[,'median'][[4]]
+
+median_fu<-quantile(prodlim(Hist(time=surv_mo,event=dead01)~1,data=eso_lt75,reverse=TRUE))$quantile[[3,2]]
+
+pander(survfit(formula = Surv(surv_mo,dead01) ~ Rx3, data=eso_lt75))
+surv_diff<-survdiff( Surv(surv_mo,dead01) ~Rx3,data=eso_lt75)
+pander(surv_diff)
+
+log_rank_p = case_when(
+  broom::glance(surv_diff)$p.value > 0.00001 ~ as.character(round(broom::glance(surv_diff)$p.value,5)) ,
+  as.numeric(broom::glance(surv_diff)$p.value) < 0.00001 ~ '<0.00001',
+  TRUE ~ '')
+
+
+plot(survfit(Surv(surv_mo,dead01) ~ Rx3, data=eso_lt75), lwd=3, main = "Esophageal Cancer - Age <75", ylab="Survival",
+xlab = "Survival Time after Diagnosis in Months", lty=c(1),  col=c("blue","red") ) # 
+
+legend(25,.95,lwd=3,legend=c(paste("ChemoRT+Surgery n=",tri_lt75,"median=",median_tri_lt75,"mo"),paste("ChemoRT n=",crt_lt75,"median=",median_crt_lt75)), lty=1, bty="n",title="Treatment",col=c("blue","red"))
+
+text(25,0.1,paste0('n=', nrow(eso_lt75),'\n median followup ',median_fu, ' months'))
+text(90,0.05,paste0('log rank p=', log_rank_p))
+```
+
+```{r}
+rm(median_fu,log_rank_p,surv_diff,tri_lt75,tri_gt75,crt_lt75,crt_gt75,median_tri_lt75,median_tri_gt75,median_crt_lt75,median_crt_gt75,surv75)
+
+```
+
+## Age >75 (all histologies)
+
+```{r,echo=F, message=F, warning=F}
+eso_gt75<-la_eso%>%
+  filter(smg2dx=='75+')
+
+tri_lt75=nrow(la_eso[la_eso$Rx=='ChemoRT+S' & la_eso$smg2dx=='<75',])
+tri_gt75=nrow(la_eso[la_eso$Rx=='ChemoRT+S' & la_eso$smg2dx=='75+',])
+crt_lt75=nrow(la_eso[la_eso$Rx=='ChemoRT' & la_eso$smg2dx=='<75',])
+crt_gt75=nrow(la_eso[la_eso$Rx=='ChemoRT' & la_eso$smg2dx=='75+',])
+
+surv75<-survfit(formula = Surv(surv_mo,dead01) ~ Rx3+smg2dx, data=la_eso)
+median_tri_lt75 = summary(surv75)$table[,'median'][[1]]
+median_crt_lt75 = summary(surv75)$table[,'median'][[3]]
+median_tri_gt75 = summary(surv75)$table[,'median'][[2]]
+median_crt_gt75 = summary(surv75)$table[,'median'][[4]]
+
+median_fu<-quantile(prodlim(Hist(time=surv_mo,event=dead01)~1,data=eso_gt75,reverse=TRUE))$quantile[[3,2]]
+
+pander(survfit(formula = Surv(surv_mo,dead01) ~ Rx3, data=eso_gt75))
+surv_diff<-survdiff( Surv(surv_mo,dead01) ~Rx3,data=eso_gt75)
+pander(surv_diff)
+
+log_rank_p = case_when(
+  broom::glance(surv_diff)$p.value > 0.00001 ~ as.character(round(broom::glance(surv_diff)$p.value,5)) ,
+  as.numeric(broom::glance(surv_diff)$p.value) < 0.00001 ~ '<0.00001',
+  TRUE ~ '')
+
+
+plot(survfit(Surv(surv_mo,dead01) ~ Rx3, data=eso_gt75), lwd=3, main = "Esophageal Cancer - Age >75", ylab="Survival",
+xlab = "Survival Time after Diagnosis in Months", lty=c(1),  col=c("blue","red") ) # 
+
+legend(23,.95,lwd=3,legend=c(paste("ChemoRT+Surgery n=",tri_gt75,"median=",median_tri_gt75,"mo"),paste("ChemoRT n=",crt_gt75,"median=",median_crt_gt75)), lty=1, bty="n",title="Treatment",col=c("blue","red"))
+
+text(20,0.1,paste0('n=', nrow(eso_gt75),'\n median followup ',median_fu, ' months'))
+text(90,0.05,paste0('log rank p=', log_rank_p))
+```
+
+

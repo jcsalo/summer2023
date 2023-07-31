@@ -1,0 +1,171 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+  always_allow_html: true
+params:
+  PHI: FALSE
+  archive: FALSE
+  collapse: FALSE
+  cox: FALSE
+  multivariable_continuous: TRUE
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,message=FALSE,comment='',warning=FALSE)
+
+knitr::opts_chunk$set(dev = 'pdf')
+
+options(xtable.comment = FALSE)
+
+#library(readxl)
+library(lubridate)
+library(stringr)
+library(tidyverse)
+library(tibble)
+library(pander)
+library(janitor)
+library(tibble)
+library(cleaner)
+library(kableExtra)
+#library(writexl)
+library(whereami)
+library(odbc)
+library(bit64)
+library(survival)
+library(prodlim)
+library(reporttools)
+library(gmodels)
+#library(crosstable)
+library(broom)
+library(tidyselect)
+library(MASS) # use for StepAIC
+
+source('functions_analysis.R')# 
+
+```
+
+---
+title: Advanced GE Cancers and Body Composition
+subtitle: '`r basename(thisfile())`' 
+
+
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+---
+<style type="text/css">
+.main-container {
+  max-width: 1200px!important;
+  margin-left: auto;
+  margin-right: auto;
+}
+</style>
+
+
+# Background
+
+Treatment of metastatic disease consists of:
+
+- Staging CT scans used to determine evaluable disease to guide therapy
+- Treatment course of multiple cycles of chemotherapy lasting 2-3 months
+- Re-staging CT scans to evaluate response to therapy
+
+Most common initial, for 'first line' chemotherapy for gastroesophageal cancer is FOLFOX (fluorouracil + oxaliplatin).  Patients who experience toxicity with oxaliplatin may be changed to fluorouracil alone (or perhaps capecitabine alone).
+
+Patients who progress or develop toxicity with first line chemotherapy are changed to second line chemotherapy.
+
+# Study Cohort
+
+Collection cohort consists of patients with gastroesophageal cancer. Records of chemotherapy administration were obtained by query of list of patients with gastroesophageal cancer by Rupali Bose
+
+- Systemic chemotherapy started between July 2014 and July 2021
+- Esophagus, GE Junction and Gastric
+- Adenocarcinoma or squamous cell carcinoma
+- Available chemotherapy administration data
+- First line therapy with FOLFOX
+
+Excluded:
+
+- GIST Tumors
+- Lymphoma
+- Undifferentiated cancer
+- Neuroendocrine carcinoma
+
+
+## Chemotherapy 
+
+Goal: Generate a list of patients receiving chemotherapy for Stage IV gastroesophageal cancers based upon automatically extracted data.  This list will be analyzed to cluster doses of drug ('cycles') into 'treatment courses' and then search for corresponding staging and restaging CT scans.
+
+Combination of pre-chemo staging scan and post-therapy restaging scan used to analyze changes in body composition due to that treatment course.
+
+Approx 750 UMPI numbers for patients with gastroesophageal cancer with diagnosis (or encounter) dates 2014-2021 thought to have received systemic chemotherapy used to pull chemotherapy data by Rupali Bose. 
+
+Data appears to contain only drugs administered in the infusion center, and would not include capcitabine (an oral form of fluorouracil). 
+
+
+```{r, echo=F}
+
+ff_doses_path <-'data_export/ff_doses.csv'
+
+ff_doses<-read_csv(ff_doses_path)%>%
+  rename(Race = race4) %>%                  # Change name for readability
+  as.data.frame()%>%      
+  droplevels.data.frame()%>%                # Remove unused factor levels
+  as.tibble()  
+
+paste('Collection cohort consists of',nrow(ff_doses),'eligible patients\n')%>%cat()
+
+```
+
+
+
+```{r, echo=F}
+
+
+agebcm1<-summary (coxph(Surv(ff_doses$survival_mo,ff_doses$dead01) ~ age_dx + smi_pre+ smd_pre + smcd_pre + smcg_pre + smcg2_pre + sex   + m1_bone + m1_liver + m1_lung + m1_n3 + m1_peritoneum +  m1_other , data=ff_doses ))
+
+agebcm1
+
+
+```
+
+## Treatment Regimens
+
+```{r}
+table(ff_doses$hx)
+
+```
+
+## Distribution of days of FOLFOX treatment
+
+```{r}
+
+hist(ff_doses$folfox_full_days,breaks=50, xlab= "Days of FOLFOX Therapy", main="Distribution of days of FOLFOX treatment")
+  
+```
+
+## Survival by Presence of Lung Disease
+
+```{r}
+surv_m1lung<-survfit(formula = Surv(survival_mo,dead01) ~ m1_lung, data=ff_doses)
+
+surv_m1lung
+
+median_lungm0 = summary(surv_m1lung)$table[,'median'][[1]]
+median_lungm1 = summary(surv_m1lung)$table[,'median'][[2]]
+
+lungm1 <-nrow(ff_doses[ff_doses$m1_lung==1,])
+lungm0 <-nrow(ff_doses[ff_doses$m1_lung==0,])
+
+surv_diff_lungm1<-survdiff( Surv(survival_mo,dead01) ~ m1_lung,data=ff_doses)
+
+log_rank_p_lungm1 = case_when(
+  broom::glance(surv_diff_lungm1)$p.value > 0.00001 ~ as.character(round(broom::glance(surv_diff_lungm1)$p.value,5)) ,
+  as.numeric(broom::glance(surv_diff_lungm1)$p.value) < 0.00001 ~ '<0.00001',
+  TRUE ~ '')
+plot(survfit(Surv(survival_mo,dead01) ~ m1_lung, data=ff_doses), lwd=3, main = "Advanced Gastroesophageal Cancers",sub="Treated with first-line FOLFOX", ylab="Survival",
+xlab = "Survival Time after Diagnosis in Months", lty=1,  col=c("red","blue","purple") ) # 
+legend(40,1.05,lwd=3,legend=c(paste("Lung M0 n=",lungm0, "\nmedian=",median_lungm0,"mo\n"),paste("Lung M1 n=",lungm0,"\nmedian=",median_lungm1,"mo")), lty=1, bty="n",title="Lung Metastatic Disease",col=c("blue","red"))
+text(10,0.15,paste0('log rank p=', log_rank_p_lungm1))
+#rm(log_rank_p_aca,surv_diff_aca,fit_aca,tri_aca,crt_aca,sexrace)
+```
+
+## Survival by Presence of Peritoneal Disease

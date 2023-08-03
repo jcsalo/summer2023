@@ -1,0 +1,331 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+  always_allow_html: true
+params:
+  PHI: FALSE
+  archive: FALSE
+  collapse: FALSE
+  cox: FALSE
+  multivariable_continuous: TRUE
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,message=FALSE,comment='',warning=FALSE)
+
+knitr::opts_chunk$set(dev = 'pdf')
+
+options(xtable.comment = FALSE)
+
+#library(readxl)
+library(lubridate)
+library(stringr)
+library(tidyverse)
+library(tibble)
+library(pander)
+library(janitor)
+library(tibble)
+library(cleaner)
+library(kableExtra)
+#library(writexl)
+library(whereami)
+library(odbc)
+library(bit64)
+library(survival)
+library(prodlim)
+library(reporttools)
+library(gmodels)
+#library(crosstable)
+library(broom)
+library(tidyselect)
+library(MASS) # use for StepAIC
+
+source('functions_analysis.R')# 
+
+options(scipen = 999)
+
+```
+
+---
+title: Advanced GE Cancers and Body Composition
+subtitle: '`r basename(thisfile())`' 
+
+
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+---
+<style type="text/css">
+.main-container {
+  max-width: 1200px!important;
+  margin-left: auto;
+  margin-right: auto;
+}
+</style>
+
+
+# Background
+
+Treatment of metastatic disease consists of:
+
+- Staging CT scans used to determine evaluable disease to guide therapy
+- Treatment course of multiple cycles of chemotherapy lasting 2-3 months
+- Re-staging CT scans to evaluate response to therapy
+
+Most common initial, for 'first line' chemotherapy for gastroesophageal cancer is FOLFOX (fluorouracil + oxaliplatin).  Patients who experience toxicity with oxaliplatin may be changed to fluorouracil alone (or perhaps capecitabine alone).
+
+Patients who progress or develop toxicity with first line chemotherapy are changed to second line chemotherapy.
+
+# Study Cohort
+
+Collection cohort consists of patients with gastroesophageal cancer. Records of chemotherapy administration were obtained by query of list of patients with gastroesophageal cancer by Rupali Bose
+
+- Systemic chemotherapy started between July 2014 and July 2021
+- Esophagus, GE Junction and Gastric
+- Adenocarcinoma, neuroendocrine or squamous cell carcinoma
+- Available chemotherapy administration data
+- First line therapy with FOLFOX
+
+Excluded:
+
+- GIST Tumors
+- Lymphoma
+
+## Chemotherapy 
+
+Goal: Generate a list of patients receiving chemotherapy for Stage IV gastroesophageal cancers based upon automatically extracted data.  This list will be analyzed to cluster doses of drug ('cycles') into 'treatment courses' and then search for corresponding staging and restaging CT scans.
+
+Combination of pre-chemo staging scan and post-therapy restaging scan used to analyze changes in body composition due to that treatment course.
+
+Approx 750 UMPI numbers for patients with gastroesophageal cancer with diagnosis (or encounter) dates 2014-2021 thought to have received systemic chemotherapy used to pull chemotherapy data by Rupali Bose. 
+
+Data appears to contain only drugs administered in the infusion center, and would not include capcitabine (an oral form of fluorouracil). 
+
+
+```{r, echo=F}
+
+ff_doses_path <-'data_export/ff_doses4.csv'
+
+ff_doses_all_indications<-read_csv(ff_doses_path,show_col_types = F)%>%
+  rename(Race = race4) %>%                  # Change name for readability
+  as.data.frame()%>%      
+  droplevels.data.frame()%>%                # Remove unused factor levels
+  as.tibble() %>%
+  mutate(smg_delta_plusminus = factor(case_when(
+    smg_delta>0 ~ 1L,
+    smg_delta<0 ~ 0L,
+    TRUE ~ NA_integer_
+  ),levels=c(0L:1L), labels=c("Gain","Loss")))
+
+paste('Collection cohort consists of',nrow(ff_doses_all_indications),'eligible patients\n')%>%cat()
+
+```
+## Indications for FOLFOX chemotherapy
+
+```{r}
+
+cat('Indications for FOLFOX chemotherapy')
+
+table(ff_doses_all_indications$chemo_intent)
+
+ff_doses<-ff_doses_all_indications%>%
+  filter(chemo_intent=='Met 1st Line')
+
+```
+Analytic cohort consists of `r nrow(ff_doses)` cases
+
+
+### Analytic cohort consists of patients receiving FOLFOX for first-line metastatic disease
+
+## Treatment Regimens
+
+```{r}
+table(ff_doses$hx)
+
+```
+
+
+
+## Distribution of cycles of FOLFOX treatment
+
+Included are "full" unmodified cycles of FOLFOX (with Oxaliplatin)
+
+```{r}
+
+hist(ff_doses$FOLFOX_full_cycles, breaks=50, xlab= "Cycles of FOLFOX Therapy", main="Distribution of cycles of FOLFOX treatment")
+  
+```
+
+## Predictors of number of full cycles of FOLFOX administered
+
+```{r,eval=T}
+
+
+ff_dose_glm<-glm(formula = FOLFOX_full_cycles ~ age_ff + 
+     smg_pre  + smg_delta + sex + 
+   m1_bone + m1_brain + m1_liver +  m1_lung + m1_n3 + m1_peritoneum + m1_t4 , family =poisson(link="log"),data=ff_doses)
+
+summary(ff_dose_glm)
+```
+
+```{r}
+boxplot(FOLFOX_full_cycles ~ smg2delta, data = ff_doses)
+```
+
+
+```{r}
+plot(ff_doses$smg_delta,ff_doses$FOLFOX_full_cycles)
+fit <-lm(FOLFOX_full_cycles ~ smg_delta, data=ff_doses)
+abline(fit)
+cor.test(ff_doses$smg_delta,ff_doses$FOLFOX_full_cycles)
+```
+
+
+## Sites of metastatic diseas
+
+```{r}
+set_vars<-c("m1_bone","m1_brain","m1_liver","m1_lung","m1_n3","m1_peritoneum","m1_t4")
+library(ComplexUpset)
+#setting colors
+#this can also be done with hexadecimal
+main_bar_col <- c("violetred4")
+sets_bar_col <- c("turquoise4")
+matrix_col <- c("slateblue4")
+shade_col <- c("wheat4")
+
+upset(data = ff_doses,
+      intersect = set_vars)
+```
+
+## Predictors of Survival
+
+Includes sex, age, sites of metastatic disease, and pre-chemotherapy body composition
+
+```{r, echo=F}
+
+
+agebcm1<-summary (coxph(Surv(ff_doses$survival_mo,ff_doses$dead01) ~ sex + age_dx +  smg_pre +   m1_bone + m1_brain + m1_liver + m1_lung + m1_n3 + m1_peritoneum + m1_t4 , data=ff_doses ))
+
+agebcm1
+
+
+```
+
+## Change in body composition parameters over time
+
+CT scans were queried for scan date approximately 6 months after start of FOLFOX
+
+
+
+$$\frac{smi_{post}-smi_{pre}}{smi_{pre}*(elapsed\ days\ after\ start\ of\ chemo)}*100$$
+
+```{r}
+
+
+hist(ff_doses$smi_delta,breaks=20)
+
+hist(ff_doses$smd_delta,breaks=20)
+
+hist(ff_doses$smg_delta,breaks=20)
+
+ff_doses%>%
+  dplyr::select(smi_pre, smi_restage ,  smi_delta)
+
+```
+
+## Survival incorporating change in body composition
+
+
+```{r, echo=F}
+
+
+agebcm1delta<-summary (coxph(Surv(ff_doses$survival_mo,ff_doses$dead01) ~ sex + age_dx +  smg_pre + smg_delta +   m1_bone + m1_brain + m1_liver + m1_lung + m1_n3 + m1_peritoneum + m1_t4  , data=ff_doses ))
+
+agebcm1delta
+
+
+```
+
+## Survival by Presence of Lung Disease
+
+```{r}
+surv_m1lung<-survfit(formula = Surv(survival_mo,dead01) ~ m1_lung, data=ff_doses)
+
+surv_m1lung
+
+median_lungm0 = summary(surv_m1lung)$table[,'median'][[1]]
+median_lungm1 = summary(surv_m1lung)$table[,'median'][[2]]
+
+lungm1 <-nrow(ff_doses[ff_doses$m1_lung==1,])
+lungm0 <-nrow(ff_doses[ff_doses$m1_lung==0,])
+
+surv_diff_lungm1<-survdiff( Surv(survival_mo,dead01) ~ m1_lung,data=ff_doses)
+
+log_rank_p_lungm1 = case_when(
+  broom::glance(surv_diff_lungm1)$p.value > 0.00001 ~ as.character(round(broom::glance(surv_diff_lungm1)$p.value,5)) ,
+  as.numeric(broom::glance(surv_diff_lungm1)$p.value) < 0.00001 ~ '<0.00001',
+  TRUE ~ '')
+plot(survfit(Surv(survival_mo,dead01) ~ m1_lung, data=ff_doses), lwd=3, main = "Advanced Gastroesophageal Cancers",sub="Treated with first-line FOLFOX", ylab="Survival",
+xlab = "Survival Time after Diagnosis in Months", lty=1,  col=c("red","blue") ) # 
+legend(40,1.05,lwd=3,legend=c(paste("Lung M0 n=",lungm0, "\nmedian=",median_lungm0,"mo\n"),paste("Lung M1 n=",lungm1,"\nmedian=",median_lungm1,"mo")), lty=1, bty="n",title="Lung Metastatic Disease",col=c("red","blue"))
+text(10,0.1,paste0('log rank p=', log_rank_p_lungm1))
+#rm(log_rank_p_aca,surv_diff_aca,fit_aca,tri_aca,crt_aca,sexrace)
+```
+
+## Survival by Presence of Peritoneal Disease
+
+
+## Survival by Presence of Lung Disease
+
+```{r}
+surv_m1lung<-survfit(formula = Surv(survival_mo,dead01) ~ m1_lung, data=ff_doses)
+
+surv_m1lung
+
+median_lungm0 = summary(surv_m1lung)$table[,'median'][[1]]
+median_lungm1 = summary(surv_m1lung)$table[,'median'][[2]]
+
+lungm1 <-nrow(ff_doses[ff_doses$m1_lung==1,])
+lungm0 <-nrow(ff_doses[ff_doses$m1_lung==0,])
+
+surv_diff_lungm1<-survdiff( Surv(survival_mo,dead01) ~ m1_lung,data=ff_doses)
+
+log_rank_p_lungm1 = case_when(
+  broom::glance(surv_diff_lungm1)$p.value > 0.00001 ~ as.character(round(broom::glance(surv_diff_lungm1)$p.value,5)) ,
+  as.numeric(broom::glance(surv_diff_lungm1)$p.value) < 0.00001 ~ '<0.00001',
+  TRUE ~ '')
+plot(survfit(Surv(survival_mo,dead01) ~ m1_lung, data=ff_doses), lwd=3, main = "Advanced Gastroesophageal Cancers",sub="Treated with first-line FOLFOX", ylab="Survival",
+xlab = "Survival Time after Diagnosis in Months", lty=1,  col=c("red","blue") ) # 
+legend(40,1.05,lwd=3,legend=c(paste("Lung M0 n=",lungm0, "\nmedian=",median_lungm0,"mo\n"),paste("Lung M1 n=",lungm1,"\nmedian=",median_lungm1,"mo")), lty=1, bty="n",title="Lung Metastatic Disease",col=c("red","blue"))
+text(10,0.1,paste0('log rank p=', log_rank_p_lungm1))
+#rm(log_rank_p_aca,surv_diff_aca,fit_aca,tri_aca,crt_aca,sexrace)
+```
+
+
+
+## Survival by Change in SMG
+
+```{r}
+surv_smg2delta<-survfit(formula = Surv(survival_ff,dead01) ~ smg2delta, data=ff_doses)
+
+surv_smg2delta
+
+median_smgdelta_Q1 = summary(surv_smg2delta)$table[,'median'][[1]]
+median_smgdelta_Q234 = summary(surv_smg2delta)$table[,'median'][[2]]
+
+
+smgdelta_Q1 <-nrow(ff_doses[ff_doses$smg2delta=='Q1',])
+smgdelta_Q234 <-nrow(ff_doses[ff_doses$smg2delta=='Q234',])
+
+surv_diff_smg2delta1<-survdiff( Surv(survival_ff,dead01) ~ smg2delta,data=ff_doses)
+
+log_rank_p_smg2delta = case_when(
+  broom::glance(surv_diff_smg2delta1)$p.value > 0.00001 ~ as.character(round(broom::glance(surv_diff_smg2delta1)$p.value,5)) ,
+  as.numeric(broom::glance(surv_diff_smg2delta1)$p.value) < 0.00001 ~ '<0.00001',
+  TRUE ~ '')
+plot(survfit(Surv(survival_ff,dead01) ~ smg2delta, data=ff_doses), lwd=3, main = "Advanced Gastroesophageal Cancers\nSurvival as a function of change in Skeletal Muscle Gauge",sub="Treated with first-line FOLFOX", ylab="Survival",
+xlab = "Survival Time after Diagnosis in Months", lty=1,  col=c("red","blue") ) # 
+legend(20,1.15,lwd=3,legend=c(paste("Skeletal Muscle Gauge Change Q1 n=",smgdelta_Q1, "\nmedian=",median_smgdelta_Q1,"mo\n"),paste("Skeletal Muscle Gauge Change Q234 n=",smgdelta_Q234,"\nmedian=",median_smgdelta_Q234,"mo")), lty=1, bty="n",title="Change in Skeletal Muscle Gauge at 6mo",col=c("red","blue"))
+text(10,0.1,paste0('log rank p=', log_rank_p_smg2delta))
+#rm(log_rank_p_aca,surv_diff_aca,fit_aca,tri_aca,crt_aca,sexrace)
+```
+
+
